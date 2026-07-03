@@ -1,15 +1,15 @@
 import { defineConfig } from "drizzle-kit";
+import path from "path";
+import { mkdirSync } from "fs";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error("DATABASE_URL is required to run drizzle commands");
-}
+const dataDir = path.join(process.cwd(), "data");
+mkdirSync(dataDir, { recursive: true });
 
 export default defineConfig({
   schema: "./drizzle/schema.ts",
   out: "./drizzle",
-  dialect: "mysql",
+  dialect: "sqlite",
   dbCredentials: {
-    url: connectionString,
+    url: path.join(dataDir, "gestion.db"),
   },
 });

@@ -1,102 +1,97 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, date } from "drizzle-orm/mysql-core";
+import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 
-/**
- * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
- */
-export const users = mysqlTable("users", {
-  /**
-   * Surrogate primary key. Auto-incremented numeric value managed by the database.
-   * Use this for relations between tables.
-   */
-  id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
+const now = () => new Date().toISOString();
+
+// ==================== USERS ====================
+export const users = sqliteTable("users", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  openId: text("openId").notNull().unique(),
   name: text("name"),
-  email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  email: text("email"),
+  loginMethod: text("loginMethod"),
+  role: text("role", { enum: ["user", "admin"] }).notNull().default("user"),
+  createdAt: text("createdAt").notNull().$defaultFn(now),
+  updatedAt: text("updatedAt").notNull().$defaultFn(now),
+  lastSignedIn: text("lastSignedIn").notNull().$defaultFn(now),
 });
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 // ==================== INSUMOS ====================
-export const insumos = mysqlTable("insumos", {
-  id: int("id").autoincrement().primaryKey(),
-  codigo: varchar("codigo", { length: 50 }).notNull().unique(),
+export const insumos = sqliteTable("insumos", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  codigo: text("codigo").notNull().unique(),
   descripcion: text("descripcion").notNull(),
-  cantidad: decimal("cantidad", { precision: 10, scale: 3 }).default("0"),
-  unidad: varchar("unidad", { length: 50 }).notNull(),
-  precioUnitario: decimal("precioUnitario", { precision: 12, scale: 2 }).default("0"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  cantidad: text("cantidad").default("0"),
+  unidad: text("unidad").notNull(),
+  precioUnitario: text("precioUnitario").default("0"),
+  createdAt: text("createdAt").notNull().$defaultFn(now),
+  updatedAt: text("updatedAt").notNull().$defaultFn(now),
 });
 
 export type Insumo = typeof insumos.$inferSelect;
 export type InsertInsumo = typeof insumos.$inferInsert;
 
 // ==================== PRODUCTOS ====================
-export const productos = mysqlTable("productos", {
-  id: int("id").autoincrement().primaryKey(),
-  nombre: varchar("nombre", { length: 255 }).notNull(),
-  stock: decimal("stock", { precision: 10, scale: 3 }).default("0"),
-  precioVenta: decimal("precioVenta", { precision: 12, scale: 2 }).default("0"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+export const productos = sqliteTable("productos", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  nombre: text("nombre").notNull(),
+  stock: text("stock").default("0"),
+  precioVenta: text("precioVenta").default("0"),
+  createdAt: text("createdAt").notNull().$defaultFn(now),
+  updatedAt: text("updatedAt").notNull().$defaultFn(now),
+  codigo: text("codigo").unique(),
+  costo: text("costo"),
 });
 
 export type Producto = typeof productos.$inferSelect;
 export type InsertProducto = typeof productos.$inferInsert;
 
 // ==================== RECETAS ====================
-export const recetas = mysqlTable("recetas", {
-  id: int("id").autoincrement().primaryKey(),
-  productoId: int("productoId").notNull(),
-  insumoId: int("insumoId").notNull(),
-  cantidad: decimal("cantidad", { precision: 10, scale: 3 }).notNull(),
-  unidad: varchar("unidad", { length: 50 }).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+export const recetas = sqliteTable("recetas", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  productoId: integer("productoId").notNull(),
+  insumoId: integer("insumoId").notNull(),
+  cantidad: text("cantidad").notNull(),
+  unidad: text("unidad").notNull(),
+  createdAt: text("createdAt").notNull().$defaultFn(now),
+  updatedAt: text("updatedAt").notNull().$defaultFn(now),
 });
 
 export type Receta = typeof recetas.$inferSelect;
 export type InsertReceta = typeof recetas.$inferInsert;
 
 // ==================== PRODUCCION ====================
-export const produccion = mysqlTable("produccion", {
-  id: int("id").autoincrement().primaryKey(),
-  fecha: date("fecha").notNull(),
-  productoId: int("productoId").notNull(),
-  cantidad: decimal("cantidad", { precision: 10, scale: 3 }).notNull(),
-  responsable: varchar("responsable", { length: 255 }).notNull(),
-  costoMP: decimal("costoMP", { precision: 12, scale: 2 }).default("0"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+export const produccion = sqliteTable("produccion", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  fecha: text("fecha").notNull(),
+  productoId: integer("productoId").notNull(),
+  cantidad: text("cantidad").notNull(),
+  responsable: text("responsable").notNull(),
+  costoMP: text("costoMP").default("0"),
+  createdAt: text("createdAt").notNull().$defaultFn(now),
+  updatedAt: text("updatedAt").notNull().$defaultFn(now),
 });
 
 export type Produccion = typeof produccion.$inferSelect;
 export type InsertProduccion = typeof produccion.$inferInsert;
 
 // ==================== VENTAS ====================
-export const ventas = mysqlTable("ventas", {
-  id: int("id").autoincrement().primaryKey(),
-  fecha: date("fecha").notNull(),
-  remito: varchar("remito", { length: 100 }),
-  dniCuit: varchar("dniCuit", { length: 50 }),
+export const ventas = sqliteTable("ventas", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  fecha: text("fecha").notNull(),
+  remito: text("remito"),
+  dniCuit: text("dniCuit"),
   direccion: text("direccion"),
-  localidad: varchar("localidad", { length: 255 }),
-  productoId: int("productoId").notNull(),
-  cantidad: decimal("cantidad", { precision: 10, scale: 3 }).notNull(),
-  precioUnitario: decimal("precioUnitario", { precision: 12, scale: 2 }).notNull(),
-  total: decimal("total", { precision: 12, scale: 2 }).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  localidad: text("localidad"),
+  productoId: integer("productoId").notNull(),
+  cantidad: text("cantidad").notNull(),
+  precioUnitario: text("precioUnitario").notNull(),
+  total: text("total").notNull(),
+  createdAt: text("createdAt").notNull().$defaultFn(now),
+  updatedAt: text("updatedAt").notNull().$defaultFn(now),
 });
 
 export type Venta = typeof ventas.$inferSelect;

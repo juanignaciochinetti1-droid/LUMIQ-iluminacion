@@ -162,7 +162,7 @@ export const gestionRouter = router({
 
       // Crear registro de producción
       await db.createProduccion({
-        fecha: new Date(input.fecha),
+        fecha: input.fecha,
         productoId: input.productoId,
         cantidad: input.cantidad.toString(),
         responsable: input.responsable,
@@ -181,11 +181,17 @@ export const gestionRouter = router({
       return { success: true };
     }),
     delete: publicProcedure.input(z.number()).mutation(async ({ input }) => {
-      // Restaurar stock del producto al eliminar
       const prod = await db.getProduccionById(input);
       if (prod) {
         const cantidad = parseFloat(prod.cantidad?.toString() || "0");
+        // Revertir stock del producto
         await db.updateProductoStock(prod.productoId, -cantidad);
+        // Restaurar insumos descontados según la receta
+        const recetas = await db.getRecetasByProducto(prod.productoId);
+        for (const receta of recetas) {
+          const cantidadARestaurar = parseFloat(receta.cantidad?.toString() || "0") * cantidad;
+          await db.incrementInsumoStock(receta.insumoId, cantidadARestaurar);
+        }
       }
       return db.deleteProduccion(input);
     }),
@@ -212,7 +218,7 @@ export const gestionRouter = router({
       const total = input.cantidad * input.precioUnitario;
 
       await db.createVenta({
-        fecha: new Date(input.fecha),
+        fecha: input.fecha,
         remito: input.remito,
         dniCuit: input.dniCuit,
         direccion: input.direccion,

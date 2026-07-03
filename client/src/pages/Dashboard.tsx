@@ -91,7 +91,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-lg font-bold text-orange-600 truncate">{maVendido?.nombre || '-'}</div>
-            <p className="text-xs text-gray-500 mt-1">{maVendido?.cantidad.toFixed(0) || 0} uds · ${maVendido?.total.toFixed(2) || '0.00'}</p>
+            <p className="text-xs text-gray-500 mt-1">{maVendido?.cantidad?.toFixed(0) || 0} uds · ${maVendido?.total?.toFixed(2) || '0.00'}</p>
           </CardContent>
         </Card>
 
@@ -101,7 +101,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-lg font-bold text-orange-600 truncate">{menosVendido?.nombre || '-'}</div>
-            <p className="text-xs text-gray-500 mt-1">{menosVendido?.cantidad.toFixed(0) || 0} uds · ${menosVendido?.total.toFixed(2) || '0.00'}</p>
+            <p className="text-xs text-gray-500 mt-1">{menosVendido?.cantidad?.toFixed(0) || 0} uds · ${menosVendido?.total?.toFixed(2) || '0.00'}</p>
           </CardContent>
         </Card>
       </div>

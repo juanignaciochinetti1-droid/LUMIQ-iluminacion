@@ -61,6 +61,7 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    if (process.send) process.send({ type: 'ready', port });
     if (process.env.AUTO_OPEN_BROWSER === 'true') {
       exec(`start http://localhost:${port}/`);
     }

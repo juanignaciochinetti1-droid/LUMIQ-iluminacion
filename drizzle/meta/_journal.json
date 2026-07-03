@@ -15,6 +15,13 @@
       "when": 1780537052649,
       "tag": "0001_blue_tigra",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1751500000000,
+      "tag": "0002_productos_fields",
+      "breakpoints": true
     }
   ]
 }
