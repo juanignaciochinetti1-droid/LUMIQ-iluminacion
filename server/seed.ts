@@ -516,7 +516,7 @@ const RETAIL_PRODUCTS = [
 ];
 
 // ─── SEED ─────────────────────────────────────────────────────────────────────
-async function seed() {
+export async function seed() {
   // Asegurar que las tablas existen (SQLite auto-init)
   initializeTables();
   console.log('Tablas SQLite listas.\n');
@@ -643,10 +643,16 @@ async function seed() {
   console.log(`\n  ${retailAdded} nuevos, ${retailSkipped} ya existian.`);
 
   console.log('\nSeed completado.');
-  process.exit(0);
 }
 
-seed().catch(err => {
-  console.error('\nError en seed:', err?.message || err);
-  process.exit(1);
-});
+// Permite seguir ejecutando "npx tsx server/seed.ts" manualmente,
+// sin llamar a process.exit() cuando se importa seed() desde el servidor.
+const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}`;
+if (isMainModule) {
+  seed()
+    .then(() => process.exit(0))
+    .catch(err => {
+      console.error('\nError en seed:', err?.message || err);
+      process.exit(1);
+    });
+}
