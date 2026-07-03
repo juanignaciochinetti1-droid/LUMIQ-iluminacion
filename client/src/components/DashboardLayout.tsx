@@ -165,6 +165,16 @@ function DashboardLayoutContent({
             </SidebarMenu>
           </SidebarContent>
 
+          <div className="flex items-center justify-center py-4 group-data-[collapsible=icon]:py-2">
+            <div className="flex items-center justify-center rounded-full bg-white p-2.5 shadow-sm group-data-[collapsible=icon]:p-1.5 transition-all">
+              <img
+                src="/logo.png"
+                alt="LUMIQ"
+                className="h-11 w-11 object-contain group-data-[collapsible=icon]:h-6 group-data-[collapsible=icon]:w-6 transition-all"
+              />
+            </div>
+          </div>
+
           <SidebarFooter className="p-3">
             <div className="flex items-center gap-3 px-1 py-1">
               <Avatar className="h-9 w-9 border shrink-0">

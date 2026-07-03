@@ -3,6 +3,8 @@ import { fork, ChildProcess } from 'child_process';
 import path from 'path';
 import { mkdirSync } from 'fs';
 
+app.setName('LUMIQ Gestion');
+
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 let serverChild: ChildProcess | null = null;
@@ -20,7 +22,7 @@ function getDbPath(): string {
 
 function startServer(): Promise<number> {
   return new Promise((resolve, reject) => {
-    const serverPath = path.join(app.getAppPath(), 'dist', 'server.cjs');
+    const serverPath = path.join(app.getAppPath(), 'dist', 'server.mjs');
     const dbPath = getDbPath();
 
     serverChild = fork(serverPath, [], {

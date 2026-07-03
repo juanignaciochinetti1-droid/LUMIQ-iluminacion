@@ -18,6 +18,15 @@ export async function setupVite(app: Express, server: Server) {
     configFile: false,
     server: serverOptions,
     appType: "custom",
+    root: path.resolve(process.cwd(), "client"),
+    publicDir: path.resolve(process.cwd(), "client", "public"),
+    resolve: {
+      alias: {
+        "@": path.resolve(process.cwd(), "client", "src"),
+        "@shared": path.resolve(process.cwd(), "shared"),
+        "@assets": path.resolve(process.cwd(), "attached_assets"),
+      },
+    },
   });
 
   app.use(vite.middlewares);
@@ -25,12 +34,7 @@ export async function setupVite(app: Express, server: Server) {
     const url = req.originalUrl;
 
     try {
-      const clientTemplate = path.resolve(
-        import.meta.dirname,
-        "../..",
-        "client",
-        "index.html"
-      );
+      const clientTemplate = path.resolve(process.cwd(), "client", "index.html");
 
       // always reload the index.html file from disk incase it changes
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
@@ -50,7 +54,7 @@ export async function setupVite(app: Express, server: Server) {
 export function serveStatic(app: Express) {
   const distPath =
     process.env.NODE_ENV === "development"
-      ? path.resolve(import.meta.dirname, "../..", "dist", "public")
+      ? path.resolve(process.cwd(), "dist", "public")
       : path.resolve(import.meta.dirname, "public");
   if (!fs.existsSync(distPath)) {
     console.error(

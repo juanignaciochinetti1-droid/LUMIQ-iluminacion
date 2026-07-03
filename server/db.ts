@@ -101,6 +101,8 @@ export function initializeTables() {
   `);
 }
 
+initializeTables();
+
 // ==================== USERS ====================
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");

@@ -12,10 +12,10 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
-    "build:server:cjs": "esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=cjs --outfile=dist/server.cjs",
+    "build:server:electron": "esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/server.mjs",
     "build:electron-main": "esbuild electron/main.ts --platform=node --bundle --format=cjs --external:electron --external:better-sqlite3 --outfile=dist/electron-main.cjs",
-    "build:electron": "vite build && npm run build:server:cjs && npm run build:electron-main",
-    "electron:dev": "npm run build:server:cjs && npm run build:electron-main && electron .",
+    "build:electron": "vite build && npm run build:server:electron && npm run build:electron-main",
+    "electron:dev": "npm run build:server:electron && npm run build:electron-main && electron .",
     "electron:build": "npm run build:electron && electron-builder"
   },
   "build": {
@@ -29,7 +29,14 @@
       "node_modules/better-sqlite3/**/*"
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -137,6 +144,11 @@
     },
     "overrides": {
       "tailwindcss>nanoid": "3.3.7"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "electron",
+      "esbuild"
+    ]
   }
 }
