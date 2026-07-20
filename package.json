@@ -21,6 +21,9 @@
   "build": {
     "appId": "com.lumiq.gestion",
     "productName": "LUMIQ Gestion",
+    "directories": {
+      "output": "release"
+    },
     "files": [
       "dist/**/*",
       "package.json"
