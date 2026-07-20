@@ -116,7 +116,7 @@ export default function Dashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-56 overflow-y-auto">
               {alertas.map((alerta, idx) => (
                 <div key={idx} className={`p-3 rounded ${alerta.color}`}>
                   <div className="font-semibold">{alerta.tipo}: {alerta.item}</div>

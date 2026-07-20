@@ -144,7 +144,7 @@ export default function Productos() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
               {stockBajo.map((p) => (
                 <div key={p.id} className="bg-white p-2 rounded border border-orange-200">
                   <div className="font-semibold text-orange-700">{p.nombre}</div>
@@ -174,54 +174,56 @@ export default function Productos() {
       {/* Tabla */}
       <Card>
         <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-orange-50 hover:bg-orange-50">
-                <TableHead>Nombre</TableHead>
-                <TableHead>Stock</TableHead>
-                <TableHead>Precio Venta</TableHead>
-                <TableHead>Valor Total</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredProductos.map((producto) => {
-                const stock = parseFloat(producto.stock?.toString() || '0');
-                const precio = parseFloat(producto.precioVenta?.toString() || '0');
-                const valorTotal = stock * precio;
-                const isLowStock = stock < 10;
+          <div className="max-h-[60vh] overflow-y-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow className="sticky top-0 z-10 bg-orange-50 hover:bg-orange-50">
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Stock</TableHead>
+                  <TableHead>Precio Venta</TableHead>
+                  <TableHead>Valor Total</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredProductos.map((producto) => {
+                  const stock = parseFloat(producto.stock?.toString() || '0');
+                  const precio = parseFloat(producto.precioVenta?.toString() || '0');
+                  const valorTotal = stock * precio;
+                  const isLowStock = stock < 10;
 
-                return (
-                  <TableRow key={producto.id} className={`hover:bg-orange-50/50 ${isLowStock ? 'bg-orange-50' : ''}`}>
-                    <TableCell className="font-medium text-orange-600">{producto.nombre}</TableCell>
-                    <TableCell className={isLowStock ? 'text-red-600 font-semibold' : ''}>
-                      {stock.toFixed(2)}
-                    </TableCell>
-                    <TableCell>${precio.toFixed(2)}</TableCell>
-                    <TableCell className="font-semibold text-orange-600">${valorTotal.toFixed(2)}</TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(producto)}
-                        className="text-orange-600 hover:text-orange-700 hover:bg-orange-100"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(producto.id)}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-100"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                  return (
+                    <TableRow key={producto.id} className={`hover:bg-orange-50/50 ${isLowStock ? 'bg-orange-50' : ''}`}>
+                      <TableCell className="font-medium text-orange-600">{producto.nombre}</TableCell>
+                      <TableCell className={isLowStock ? 'text-red-600 font-semibold' : ''}>
+                        {stock.toFixed(2)}
+                      </TableCell>
+                      <TableCell>${precio.toFixed(2)}</TableCell>
+                      <TableCell className="font-semibold text-orange-600">${valorTotal.toFixed(2)}</TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEdit(producto)}
+                          className="text-orange-600 hover:text-orange-700 hover:bg-orange-100"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(producto.id)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-100"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
           {filteredProductos.length === 0 && (
             <div className="text-center py-8 text-gray-500">
               No hay productos registrados
