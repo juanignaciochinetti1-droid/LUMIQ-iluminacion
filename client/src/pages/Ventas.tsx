@@ -9,6 +9,12 @@ import { Plus, Trash2, FileText } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
 
+const ENTREGA_LABELS: Record<string, string> = {
+  retiro_local: 'Retiro en el local',
+  mercado_libre: 'Mercado Libre',
+  envio: 'Envío',
+};
+
 export default function Ventas() {
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -17,6 +23,7 @@ export default function Ventas() {
     dniCuit: '',
     direccion: '',
     localidad: '',
+    entrega: '',
     productoId: '',
     cantidad: '',
     precioUnitario: '',
@@ -40,6 +47,7 @@ export default function Ventas() {
         dniCuit: formData.dniCuit,
         direccion: formData.direccion,
         localidad: formData.localidad,
+        entrega: formData.entrega ? (formData.entrega as 'retiro_local' | 'mercado_libre' | 'envio') : undefined,
         productoId: parseInt(formData.productoId),
         cantidad,
         precioUnitario,
@@ -53,6 +61,7 @@ export default function Ventas() {
         dniCuit: '',
         direccion: '',
         localidad: '',
+        entrega: '',
         productoId: '',
         cantidad: '',
         precioUnitario: '',
@@ -108,6 +117,7 @@ export default function Ventas() {
     <div class="row"><span class="label">DNI/CUIT:</span> <span>${venta.dniCuit || '-'}</span></div>
     <div class="row"><span class="label">Localidad:</span> <span>${venta.localidad || '-'}</span></div>
     <div class="row"><span class="label">Dirección:</span> <span>${venta.direccion || '-'}</span></div>
+    <div class="row"><span class="label">Modo de Entrega:</span> <span>${venta.entrega ? ENTREGA_LABELS[venta.entrega] : '-'}</span></div>
   </div>
   <div class="section">
     <h2>DETALLE DE VENTA</h2>
@@ -164,6 +174,7 @@ export default function Ventas() {
                 dniCuit: '',
                 direccion: '',
                 localidad: '',
+                entrega: '',
                 productoId: '',
                 cantidad: '',
                 precioUnitario: '',
@@ -227,6 +238,20 @@ export default function Ventas() {
                   value={formData.direccion}
                   onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
                 />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">Modo de Entrega</label>
+                <Select value={formData.entrega} onValueChange={(v) => setFormData({ ...formData, entrega: v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar modo de entrega" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="retiro_local">Retiro en el local</SelectItem>
+                    <SelectItem value="mercado_libre">Mercado Libre</SelectItem>
+                    <SelectItem value="envio">Envío</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>
@@ -299,6 +324,7 @@ export default function Ventas() {
                 <TableHead>Fecha</TableHead>
                 <TableHead>Remito</TableHead>
                 <TableHead>Cliente</TableHead>
+                <TableHead>Entrega</TableHead>
                 <TableHead>Producto</TableHead>
                 <TableHead>Cantidad</TableHead>
                 <TableHead>Precio Unit.</TableHead>
@@ -315,6 +341,7 @@ export default function Ventas() {
                     <div>{v.dniCuit || '-'}</div>
                     <div className="text-gray-500">{v.localidad || '-'}</div>
                   </TableCell>
+                  <TableCell className="text-sm">{v.entrega ? ENTREGA_LABELS[v.entrega] : '-'}</TableCell>
                   <TableCell className="text-orange-600 font-medium">{getProductoNombre(v.productoId)}</TableCell>
                   <TableCell>{parseFloat(v.cantidad?.toString() || '0').toFixed(3)}</TableCell>
                   <TableCell>${parseFloat(v.precioUnitario?.toString() || '0').toFixed(2)}</TableCell>

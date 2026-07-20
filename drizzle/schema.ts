@@ -86,6 +86,7 @@ export const ventas = sqliteTable("ventas", {
   dniCuit: text("dniCuit"),
   direccion: text("direccion"),
   localidad: text("localidad"),
+  entrega: text("entrega", { enum: ["retiro_local", "mercado_libre", "envio"] }),
   productoId: integer("productoId").notNull(),
   cantidad: text("cantidad").notNull(),
   precioUnitario: text("precioUnitario").notNull(),

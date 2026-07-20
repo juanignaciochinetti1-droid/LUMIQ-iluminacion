@@ -91,6 +91,7 @@ export function initializeTables() {
       dniCuit TEXT,
       direccion TEXT,
       localidad TEXT,
+      entrega TEXT,
       productoId INTEGER NOT NULL,
       cantidad TEXT NOT NULL,
       precioUnitario TEXT NOT NULL,
@@ -99,6 +100,11 @@ export function initializeTables() {
       updatedAt TEXT NOT NULL
     );
   `);
+
+  const ventasColumns = sqlite.prepare("PRAGMA table_info(ventas)").all() as { name: string }[];
+  if (!ventasColumns.some(c => c.name === "entrega")) {
+    sqlite.exec("ALTER TABLE ventas ADD COLUMN entrega TEXT");
+  }
 }
 
 initializeTables();
