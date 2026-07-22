@@ -4,12 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Edit2, Trash2, Search } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
 
 export default function Insumos() {
   const [search, setSearch] = useState('');
+  const [soloStockBajo, setSoloStockBajo] = useState(false);
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
@@ -29,6 +31,10 @@ export default function Insumos() {
     i.codigo?.toLowerCase().includes(search.toLowerCase()) ||
     i.descripcion?.toLowerCase().includes(search.toLowerCase())
   ) || [];
+
+  const insumosTabla = soloStockBajo
+    ? filteredInsumos.filter(i => parseFloat(i.cantidad?.toString() || '0') < 10)
+    : filteredInsumos;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,6 +171,13 @@ export default function Insumos() {
               className="border-0"
             />
           </div>
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer w-fit">
+            <Checkbox
+              checked={soloStockBajo}
+              onCheckedChange={(checked) => setSoloStockBajo(checked === true)}
+            />
+            Solo stock bajo
+          </label>
         </CardHeader>
       </Card>
 
@@ -184,11 +197,15 @@ export default function Insumos() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredInsumos.map((insumo) => (
-                  <TableRow key={insumo.id} className="hover:bg-orange-50/50">
+                {insumosTabla.map((insumo) => {
+                  const isLowStock = parseFloat(insumo.cantidad?.toString() || '0') < 10;
+                  return (
+                  <TableRow key={insumo.id} className={`hover:bg-orange-50/50 ${isLowStock ? 'bg-orange-50' : ''}`}>
                     <TableCell className="font-medium text-orange-600">{insumo.codigo}</TableCell>
                     <TableCell>{insumo.descripcion}</TableCell>
-                    <TableCell>{parseFloat(insumo.cantidad?.toString() || '0').toFixed(3)}</TableCell>
+                    <TableCell className={isLowStock ? 'text-red-600 font-semibold' : ''}>
+                      {parseFloat(insumo.cantidad?.toString() || '0').toFixed(3)}
+                    </TableCell>
                     <TableCell>{insumo.unidad}</TableCell>
                     <TableCell>${parseFloat(insumo.precioUnitario?.toString() || '0').toFixed(2)}</TableCell>
                     <TableCell className="text-right space-x-2">
@@ -210,13 +227,14 @@ export default function Insumos() {
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
-          {filteredInsumos.length === 0 && (
+          {insumosTabla.length === 0 && (
             <div className="text-center py-8 text-gray-500">
-              No hay insumos registrados
+              {soloStockBajo ? 'No hay insumos con stock bajo' : 'No hay insumos registrados'}
             </div>
           )}
         </CardContent>

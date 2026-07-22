@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, FileText } from 'lucide-react';
+import { Plus, Trash2, FileText, Search } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
 
@@ -17,6 +17,10 @@ const ENTREGA_LABELS: Record<string, string> = {
 
 export default function Ventas() {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [entregaFilter, setEntregaFilter] = useState('todos');
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
   const [formData, setFormData] = useState({
     fecha: new Date().toISOString().split('T')[0],
     remito: '',
@@ -153,6 +157,19 @@ export default function Ventas() {
 
   const getProductoNombre = (id: number) => productos?.find(p => p.id === id)?.nombre || `Producto ${id}`;
   const getProductoPrecio = (id: number) => parseFloat(productos?.find(p => p.id === id)?.precioVenta?.toString() || '0');
+
+  const filteredVentas = (ventas || []).filter(v => {
+    const term = search.trim().toLowerCase();
+    const matchesSearch = !term ||
+      v.remito?.toLowerCase().includes(term) ||
+      v.dniCuit?.toLowerCase().includes(term) ||
+      v.localidad?.toLowerCase().includes(term) ||
+      getProductoNombre(v.productoId).toLowerCase().includes(term);
+    const matchesEntrega = entregaFilter === 'todos' || v.entrega === entregaFilter;
+    const matchesDesde = !fechaDesde || v.fecha >= fechaDesde;
+    const matchesHasta = !fechaHasta || v.fecha <= fechaHasta;
+    return matchesSearch && matchesEntrega && matchesDesde && matchesHasta;
+  });
 
   const cantidad = parseFloat(formData.cantidad || '0');
   const precioUnitario = parseFloat(formData.precioUnitario || '0');
@@ -315,25 +332,73 @@ export default function Ventas() {
         </Dialog>
       </div>
 
+      {/* Filtros */}
+      <Card>
+        <CardHeader className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Search className="w-4 h-4 text-gray-400" />
+            <Input
+              placeholder="Buscar por remito, DNI/CUIT, localidad o producto..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="border-0"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-medium text-gray-500">Desde</label>
+              <Input
+                type="date"
+                value={fechaDesde}
+                onChange={(e) => setFechaDesde(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500">Hasta</label>
+              <Input
+                type="date"
+                value={fechaHasta}
+                onChange={(e) => setFechaHasta(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500">Modo de Entrega</label>
+              <Select value={entregaFilter} onValueChange={setEntregaFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos</SelectItem>
+                  <SelectItem value="retiro_local">Retiro en el local</SelectItem>
+                  <SelectItem value="mercado_libre">Mercado Libre</SelectItem>
+                  <SelectItem value="envio">Envío</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
+
       {/* Tabla de histórico */}
       <Card>
         <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-orange-50 hover:bg-orange-50">
-                <TableHead>Fecha</TableHead>
-                <TableHead>Remito</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Entrega</TableHead>
-                <TableHead>Producto</TableHead>
-                <TableHead>Cantidad</TableHead>
-                <TableHead>Precio Unit.</TableHead>
-                <TableHead>Total</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {ventas?.map((v) => (
+          <div className="max-h-[60vh] overflow-y-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow className="sticky top-0 z-10 bg-orange-50 hover:bg-orange-50">
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Remito</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Entrega</TableHead>
+                  <TableHead>Producto</TableHead>
+                  <TableHead>Cantidad</TableHead>
+                  <TableHead>Precio Unit.</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredVentas.map((v) => (
                 <TableRow key={v.id} className="hover:bg-orange-50/50">
                   <TableCell>{new Date(v.fecha + 'T00:00:00').toLocaleDateString('es-AR')}</TableCell>
                   <TableCell className="font-medium">{v.remito || '-'}</TableCell>
@@ -369,9 +434,10 @@ export default function Ventas() {
               ))}
             </TableBody>
           </Table>
-          {(!ventas || ventas.length === 0) && (
+          </div>
+          {filteredVentas.length === 0 && (
             <div className="text-center py-8 text-gray-500">
-              No hay ventas registradas
+              {ventas && ventas.length > 0 ? 'Ninguna venta coincide con los filtros' : 'No hay ventas registradas'}
             </div>
           )}
         </CardContent>

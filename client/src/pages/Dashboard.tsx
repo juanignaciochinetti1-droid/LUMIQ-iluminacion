@@ -71,7 +71,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">${totalVentas.toFixed(2)}</div>
-            <p className="text-xs text-gray-500 mt-1">Ventas del período</p>
+            <p className="text-xs text-gray-500 mt-1">Total histórico</p>
           </CardContent>
         </Card>
 

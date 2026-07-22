@@ -4,12 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Edit2, Trash2, Search, AlertTriangle } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
 
 export default function Productos() {
   const [search, setSearch] = useState('');
+  const [soloStockBajo, setSoloStockBajo] = useState(false);
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
@@ -28,6 +30,8 @@ export default function Productos() {
   ) || [];
 
   const stockBajo = filteredProductos.filter(p => parseFloat(p.stock?.toString() || '0') < 10);
+
+  const productosTabla = soloStockBajo ? stockBajo : filteredProductos;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,6 +172,13 @@ export default function Productos() {
               className="border-0"
             />
           </div>
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer w-fit">
+            <Checkbox
+              checked={soloStockBajo}
+              onCheckedChange={(checked) => setSoloStockBajo(checked === true)}
+            />
+            Solo stock bajo
+          </label>
         </CardHeader>
       </Card>
 
@@ -186,7 +197,7 @@ export default function Productos() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredProductos.map((producto) => {
+                {productosTabla.map((producto) => {
                   const stock = parseFloat(producto.stock?.toString() || '0');
                   const precio = parseFloat(producto.precioVenta?.toString() || '0');
                   const valorTotal = stock * precio;
@@ -224,9 +235,9 @@ export default function Productos() {
               </TableBody>
             </Table>
           </div>
-          {filteredProductos.length === 0 && (
+          {productosTabla.length === 0 && (
             <div className="text-center py-8 text-gray-500">
-              No hay productos registrados
+              {soloStockBajo ? 'No hay productos con stock bajo' : 'No hay productos registrados'}
             </div>
           )}
         </CardContent>
