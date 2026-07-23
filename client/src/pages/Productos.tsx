@@ -90,7 +90,13 @@ export default function Productos() {
           <h1 className="text-3xl font-bold text-gray-900">Productos</h1>
           <p className="text-gray-600">Gestiona tu catálogo de productos</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(isOpen) => {
+          setOpen(isOpen);
+          if (!isOpen) {
+            setEditingId(null);
+            setFormData({ nombre: '', stock: '', precioVenta: '' });
+          }
+        }}>
           <DialogTrigger asChild>
             <Button className="bg-orange-600 hover:bg-orange-700" onClick={() => {
               setEditingId(null);
@@ -202,9 +208,13 @@ export default function Productos() {
                   const precio = parseFloat(producto.precioVenta?.toString() || '0');
                   const valorTotal = stock * precio;
                   const isLowStock = stock < 10;
+                  const isEditing = open && editingId === producto.id;
 
                   return (
-                    <TableRow key={producto.id} className={`hover:bg-orange-50/50 ${isLowStock ? 'bg-orange-50' : ''}`}>
+                    <TableRow
+                      key={producto.id}
+                      className={`hover:bg-orange-50/50 ${isLowStock ? 'bg-orange-50' : ''} ${isEditing ? 'bg-orange-100 ring-2 ring-inset ring-orange-500' : ''}`}
+                    >
                       <TableCell className="font-medium text-orange-600">{producto.nombre}</TableCell>
                       <TableCell className={isLowStock ? 'text-red-600 font-semibold' : ''}>
                         {stock.toFixed(2)}

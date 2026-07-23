@@ -99,7 +99,13 @@ export default function Insumos() {
           <h1 className="text-3xl font-bold text-gray-900">Insumos</h1>
           <p className="text-gray-600">Gestiona tu inventario de insumos</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(isOpen) => {
+          setOpen(isOpen);
+          if (!isOpen) {
+            setEditingId(null);
+            setFormData({ codigo: '', descripcion: '', cantidad: '', unidad: '', precioUnitario: '' });
+          }
+        }}>
           <DialogTrigger asChild>
             <Button className="bg-orange-600 hover:bg-orange-700" onClick={() => {
               setEditingId(null);
@@ -199,8 +205,12 @@ export default function Insumos() {
               <TableBody>
                 {insumosTabla.map((insumo) => {
                   const isLowStock = parseFloat(insumo.cantidad?.toString() || '0') < 10;
+                  const isEditing = open && editingId === insumo.id;
                   return (
-                  <TableRow key={insumo.id} className={`hover:bg-orange-50/50 ${isLowStock ? 'bg-orange-50' : ''}`}>
+                  <TableRow
+                    key={insumo.id}
+                    className={`hover:bg-orange-50/50 ${isLowStock ? 'bg-orange-50' : ''} ${isEditing ? 'bg-orange-100 ring-2 ring-inset ring-orange-500' : ''}`}
+                  >
                     <TableCell className="font-medium text-orange-600">{insumo.codigo}</TableCell>
                     <TableCell>{insumo.descripcion}</TableCell>
                     <TableCell className={isLowStock ? 'text-red-600 font-semibold' : ''}>
