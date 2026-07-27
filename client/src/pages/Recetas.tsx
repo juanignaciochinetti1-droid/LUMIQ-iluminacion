@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, CheckCircle2, XCircle, AlertCircle, FlaskConical, PackagePlus, X } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, XCircle, AlertCircle, FlaskConical, PackagePlus, X, Search } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
 
@@ -15,6 +15,7 @@ const emptyNuevoProducto = { nombre: '', stock: '0', precioVenta: '0' };
 
 export default function Recetas() {
   const [selectedProductoId, setSelectedProductoId] = useState<string>('');
+  const [productoSearch, setProductoSearch] = useState<string>('');
   const [cantidadProducir, setCantidadProducir] = useState<string>('1');
 
   // Dialog agregar componente
@@ -39,6 +40,9 @@ export default function Recetas() {
   const createProductoMutation = trpc.productos.create.useMutation();
 
   const productoSeleccionado = productos?.find(p => p.id.toString() === selectedProductoId);
+  const productosFiltrados = productos?.filter(p =>
+    p.nombre.toLowerCase().includes(productoSearch.trim().toLowerCase())
+  ) || [];
   const recetasProducto = recetas?.filter(r => r.productoId?.toString() === selectedProductoId) || [];
   const unidadesAProducir = parseFloat(cantidadProducir || '1') || 1;
 
@@ -160,12 +164,30 @@ export default function Recetas() {
           <div className="flex gap-3 items-end flex-wrap">
             <div className="flex-1 min-w-[220px]">
               <label className="text-sm font-medium mb-1 block">Producto</label>
-              <Select value={selectedProductoId} onValueChange={setSelectedProductoId}>
+              <Select
+                value={selectedProductoId}
+                onValueChange={setSelectedProductoId}
+                onOpenChange={(open) => { if (!open) setProductoSearch(''); }}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar producto..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {productos?.map(p => (
+                  <div className="flex items-center gap-2 px-2 pb-2 sticky top-0 bg-white">
+                    <Search className="w-4 h-4 text-gray-400 shrink-0" />
+                    <input
+                      autoFocus
+                      placeholder="Buscar producto..."
+                      value={productoSearch}
+                      onChange={(e) => setProductoSearch(e.target.value)}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      className="w-full text-sm outline-none py-1"
+                    />
+                  </div>
+                  {productosFiltrados.length === 0 && (
+                    <div className="px-2 py-4 text-sm text-gray-500 text-center">Sin resultados</div>
+                  )}
+                  {productosFiltrados.map(p => (
                     <SelectItem key={p.id} value={p.id.toString()}>{p.nombre}</SelectItem>
                   ))}
                 </SelectContent>

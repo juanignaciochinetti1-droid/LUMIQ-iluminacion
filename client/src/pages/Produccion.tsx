@@ -5,12 +5,15 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, Search } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
 
 export default function Produccion() {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
   const [formData, setFormData] = useState({
     fecha: new Date().toISOString().split('T')[0],
     productoId: '',
@@ -70,6 +73,16 @@ export default function Produccion() {
 
   const recetasSeleccionadas = formData.productoId ? getRecetasProducto(parseInt(formData.productoId)) : [];
   const cantidadProduccion = parseFloat(formData.cantidad || '0');
+
+  const filteredProduccion = (produccion || []).filter(p => {
+    const term = search.trim().toLowerCase();
+    const matchesSearch = !term ||
+      getProductoNombre(p.productoId).toLowerCase().includes(term) ||
+      p.responsable?.toLowerCase().includes(term);
+    const matchesDesde = !fechaDesde || p.fecha >= fechaDesde;
+    const matchesHasta = !fechaHasta || p.fecha <= fechaHasta;
+    return matchesSearch && matchesDesde && matchesHasta;
+  });
 
   return (
     <div className="space-y-6">
@@ -194,45 +207,80 @@ export default function Produccion() {
         </Dialog>
       </div>
 
+      {/* Filtros */}
+      <Card>
+        <CardHeader className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Search className="w-4 h-4 text-gray-400" />
+            <Input
+              placeholder="Buscar por producto o responsable..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="border-0"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-gray-500">Desde</label>
+              <Input
+                type="date"
+                value={fechaDesde}
+                onChange={(e) => setFechaDesde(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500">Hasta</label>
+              <Input
+                type="date"
+                value={fechaHasta}
+                onChange={(e) => setFechaHasta(e.target.value)}
+              />
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
+
       {/* Tabla de histórico */}
       <Card>
         <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-orange-50 hover:bg-orange-50">
-                <TableHead>Fecha</TableHead>
-                <TableHead>Producto</TableHead>
-                <TableHead>Cantidad</TableHead>
-                <TableHead>Responsable</TableHead>
-                <TableHead>Costo MP</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {produccion?.map((p) => (
-                <TableRow key={p.id} className="hover:bg-orange-50/50">
-                  <TableCell>{new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-AR')}</TableCell>
-                  <TableCell className="font-medium text-orange-600">{getProductoNombre(p.productoId)}</TableCell>
-                  <TableCell>{parseFloat(p.cantidad?.toString() || '0').toFixed(3)}</TableCell>
-                  <TableCell>{p.responsable}</TableCell>
-                  <TableCell>${parseFloat(p.costoMP?.toString() || '0').toFixed(2)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(p.id)}
-                      className="text-red-600 hover:text-red-700 hover:bg-red-100"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </TableCell>
+          <div className="max-h-[60vh] overflow-y-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow className="sticky top-0 z-10 bg-orange-50 hover:bg-orange-50">
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Producto</TableHead>
+                  <TableHead>Cantidad</TableHead>
+                  <TableHead>Responsable</TableHead>
+                  <TableHead>Costo MP</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {(!produccion || produccion.length === 0) && (
+              </TableHeader>
+              <TableBody>
+                {filteredProduccion.map((p) => (
+                  <TableRow key={p.id} className="hover:bg-orange-50/50">
+                    <TableCell>{new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-AR')}</TableCell>
+                    <TableCell className="font-medium text-orange-600">{getProductoNombre(p.productoId)}</TableCell>
+                    <TableCell>{parseFloat(p.cantidad?.toString() || '0').toFixed(3)}</TableCell>
+                    <TableCell>{p.responsable}</TableCell>
+                    <TableCell>${parseFloat(p.costoMP?.toString() || '0').toFixed(2)}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(p.id)}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-100"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          {filteredProduccion.length === 0 && (
             <div className="text-center py-8 text-gray-500">
-              No hay registros de producción
+              {produccion && produccion.length > 0 ? 'Ningún registro coincide con los filtros' : 'No hay registros de producción'}
             </div>
           )}
         </CardContent>
