@@ -3,10 +3,18 @@ import fs from "fs";
 import { type Server } from "http";
 import { nanoid } from "nanoid";
 import path from "path";
-import { createServer as createViteServer } from "vite";
-import viteConfig from "../../vite.config";
 
 export async function setupVite(app: Express, server: Server) {
+  // Imports dinamicos: vite/@vitejs/plugin-react/@tailwindcss/vite son
+  // devDependencies que no se empaquetan en el instalador. Esta funcion
+  // solo se llama en desarrollo (ver index.ts), asi que nunca se ejecutan
+  // en produccion. No se reutiliza vite.config.ts (archivo local) a
+  // proposito: esbuild lo inlinearia junto con sus imports de "vite" y
+  // rompería el mismo empaquetado que esto evita.
+  const { createServer: createViteServer } = await import("vite");
+  const { default: react } = await import("@vitejs/plugin-react");
+  const { default: tailwindcss } = await import("@tailwindcss/vite");
+
   const serverOptions = {
     middlewareMode: true,
     hmr: { server },
@@ -14,7 +22,7 @@ export async function setupVite(app: Express, server: Server) {
   };
 
   const vite = await createViteServer({
-    ...viteConfig,
+    plugins: [react(), tailwindcss()],
     configFile: false,
     server: serverOptions,
     appType: "custom",
