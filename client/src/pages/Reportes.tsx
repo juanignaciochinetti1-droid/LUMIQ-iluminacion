@@ -148,7 +148,7 @@ export default function Reportes() {
             Informe de Stock
           </CardTitle>
           <CardDescription>
-            Genera un informe del estado actual del stock de productos e insumos
+            Genera un informe del estado actual del stock del catálogo de productos
           </CardDescription>
         </CardHeader>
         <CardContent>

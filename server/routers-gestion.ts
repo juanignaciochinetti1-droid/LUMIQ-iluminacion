@@ -2,110 +2,136 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
+import * as svc from "./services";
+import { CONDICIONES_PAGO, ESTADOS_COTIZACION } from "../drizzle/schema";
 
 // ==================== SCHEMAS ====================
-const insumoSchema = z.object({
-  codigo: z.string(),
-  descripcion: z.string(),
-  cantidad: z.coerce.number().default(0),
-  unidad: z.string(),
-  precioUnitario: z.coerce.number().default(0),
-});
+const pct = z.coerce.number().min(0).max(100);
+const texto = z.string().trim().max(500);
+const textoOpcional = texto.optional();
 
 const productoSchema = z.object({
-  nombre: z.string(),
+  codigo: textoOpcional,
+  codigoProveedor: textoOpcional,
+  nombre: texto.min(1, "Ingresá el nombre"),
+  unidad: texto.min(1).default("u"),
   stock: z.coerce.number().default(0),
-  precioVenta: z.coerce.number().default(0),
+  costo: z.coerce.number().min(0).default(0),
+  precioVenta: z.coerce.number().min(0).default(0),
+  descuentoContado: pct.default(0),
 });
 
 const recetaSchema = z.object({
   productoId: z.number(),
   insumoId: z.number(),
-  cantidad: z.coerce.number(),
-  unidad: z.string(),
+  cantidad: z.coerce.number().positive(),
+  unidad: z.string().min(1),
 });
 
 const produccionSchema = z.object({
-  fecha: z.string(),
+  fecha: z.string().min(1),
   productoId: z.number(),
-  cantidad: z.coerce.number(),
-  responsable: z.string(),
-  costoMP: z.coerce.number().default(0),
+  cantidad: z.coerce.number().positive("La cantidad debe ser mayor a 0"),
+  responsable: z.string().trim().min(1, "Ingresá el responsable"),
+  costoMP: z.coerce.number().min(0).default(0),
 });
 
-const ventaSchema = z.object({
-  fecha: z.string(),
-  remito: z.string().optional(),
-  dniCuit: z.string().optional(),
-  direccion: z.string().optional(),
-  localidad: z.string().optional(),
-  entrega: z.enum(["retiro_local", "mercado_libre", "envio"]).optional(),
-  productoId: z.number(),
-  cantidad: z.coerce.number(),
-  precioUnitario: z.coerce.number(),
-  total: z.coerce.number(),
+const clienteSchema = z.object({
+  nombre: texto.min(1, "Ingresá nombre y apellido"),
+  dni: textoOpcional,
+  telefono: textoOpcional,
+  direccion: textoOpcional,
+  tieneCuentaCorriente: z.boolean().optional(),
 });
+
+const lineaSchema = z.object({
+  productoId: z.number().int(),
+  cantidad: z.coerce.number().positive("La cantidad debe ser mayor a 0"),
+  precioUnitario: z.coerce.number().min(0),
+  descuento: pct.default(0),
+});
+
+const items = z.array(lineaSchema).min(1, "Cargá al menos un artículo").max(50);
+
+const ventaSchema = z.object({
+  fecha: z.string().min(1),
+  clienteId: z.number().nullish(),
+  nuevoCliente: clienteSchema.nullish(),
+  dniCuit: textoOpcional,
+  direccion: textoOpcional,
+  localidad: textoOpcional,
+  entrega: z.enum(["retiro_local", "mercado_libre", "envio"]).optional(),
+  condicionPago: z.enum(CONDICIONES_PAGO),
+  descuento: pct.default(0),
+  comentarios: z.string().max(2000).optional(),
+  items,
+});
+
+const cotizacionSchema = z.object({
+  fecha: z.string().min(1),
+  clienteId: z.number().nullish(),
+  nuevoCliente: clienteSchema.nullish(),
+  condicionPago: z.enum(CONDICIONES_PAGO),
+  descuento: pct.default(0),
+  estado: z.enum(ESTADOS_COTIZACION).default("pendiente"),
+  comentarios: z.string().max(2000).optional(),
+  items,
+});
+
+/** Convierte el error de código duplicado de SQLite en un mensaje entendible. */
+function conMensajeDeCodigo<T>(fn: () => Promise<T>): Promise<T> {
+  return fn().catch((e: any) => {
+    if (String(e?.message ?? e).includes("UNIQUE constraint failed: productos.codigo")) {
+      throw new TRPCError({ code: "CONFLICT", message: "Ya existe un producto con ese código interno." });
+    }
+    throw e;
+  });
+}
+
+const vacioANull = (v?: string) => (v && v.trim() ? v.trim() : null);
 
 // ==================== ROUTERS ====================
 export const gestionRouter = router({
-  // INSUMOS
-  insumos: router({
-    list: publicProcedure.query(() => db.getInsumos()),
-    getById: publicProcedure.input(z.number()).query(({ input }) => db.getInsumoById(input)),
-    create: publicProcedure.input(insumoSchema).mutation(({ input }) => {
-      return db.createInsumo({
-        codigo: input.codigo,
-        descripcion: input.descripcion,
-        cantidad: input.cantidad.toString(),
-        unidad: input.unidad,
-        precioUnitario: input.precioUnitario.toString(),
-      });
-    }),
-    update: publicProcedure.input(z.object({
-      id: z.number(),
-      codigo: z.string().optional(),
-      descripcion: z.string().optional(),
-      cantidad: z.coerce.number().optional(),
-      unidad: z.string().optional(),
-      precioUnitario: z.coerce.number().optional(),
-    })).mutation(({ input }) => {
-      const { id, ...data } = input;
-      const dataToUpdate: any = {};
-      if (data.cantidad !== undefined) dataToUpdate.cantidad = data.cantidad.toString();
-      if (data.precioUnitario !== undefined) dataToUpdate.precioUnitario = data.precioUnitario.toString();
-      if (data.codigo !== undefined) dataToUpdate.codigo = data.codigo;
-      if (data.descripcion !== undefined) dataToUpdate.descripcion = data.descripcion;
-      if (data.unidad !== undefined) dataToUpdate.unidad = data.unidad;
-      return db.updateInsumo(id, dataToUpdate);
-    }),
-    delete: publicProcedure.input(z.number()).mutation(({ input }) => db.deleteInsumo(input)),
-  }),
-
-  // PRODUCTOS
+  // PRODUCTOS (incluye lo que antes eran insumos)
   productos: router({
     list: publicProcedure.query(() => db.getProductos()),
     getById: publicProcedure.input(z.number()).query(({ input }) => db.getProductoById(input)),
-    create: publicProcedure.input(productoSchema).mutation(({ input }) => {
-      return db.createProducto({
+    create: publicProcedure.input(productoSchema).mutation(({ input }) =>
+      conMensajeDeCodigo(() => db.createProducto({
+        codigo: vacioANull(input.codigo),
+        codigoProveedor: vacioANull(input.codigoProveedor),
         nombre: input.nombre,
+        unidad: input.unidad,
         stock: input.stock.toString(),
+        costo: input.costo.toString(),
         precioVenta: input.precioVenta.toString(),
-      });
-    }),
-    update: publicProcedure.input(z.object({
-      id: z.number(),
-      nombre: z.string().optional(),
-      stock: z.coerce.number().optional(),
-      precioVenta: z.coerce.number().optional(),
-    })).mutation(({ input }) => {
+        descuentoContado: input.descuentoContado.toString(),
+      }))
+    ),
+    update: publicProcedure.input(productoSchema.partial().extend({ id: z.number() })).mutation(({ input }) => {
       const { id, ...data } = input;
-      const dataToUpdate: any = {};
-      if (data.stock !== undefined) dataToUpdate.stock = data.stock.toString();
-      if (data.precioVenta !== undefined) dataToUpdate.precioVenta = data.precioVenta.toString();
+      const dataToUpdate: Record<string, unknown> = {};
+      if (data.codigo !== undefined) dataToUpdate.codigo = vacioANull(data.codigo);
+      if (data.codigoProveedor !== undefined) dataToUpdate.codigoProveedor = vacioANull(data.codigoProveedor);
       if (data.nombre !== undefined) dataToUpdate.nombre = data.nombre;
-      return db.updateProducto(id, dataToUpdate);
+      if (data.unidad !== undefined) dataToUpdate.unidad = data.unidad;
+      if (data.stock !== undefined) dataToUpdate.stock = data.stock.toString();
+      if (data.costo !== undefined) dataToUpdate.costo = data.costo.toString();
+      if (data.precioVenta !== undefined) dataToUpdate.precioVenta = data.precioVenta.toString();
+      if (data.descuentoContado !== undefined) dataToUpdate.descuentoContado = data.descuentoContado.toString();
+      return conMensajeDeCodigo(() => db.updateProducto(id, dataToUpdate));
     }),
-    delete: publicProcedure.input(z.number()).mutation(({ input }) => db.deleteProducto(input)),
+    delete: publicProcedure.input(z.number()).mutation(async ({ input }) => {
+      const usadoEn = db.getRecetasQueUsan(input);
+      if (usadoEn.length > 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `No se puede eliminar: se usa como componente en ${usadoEn.length} receta(s). Quitalo de esas recetas primero.`,
+        });
+      }
+      for (const r of await db.getRecetasByProducto(input)) await db.deleteReceta(r.id);
+      return db.deleteProducto(input);
+    }),
   }),
 
   // RECETAS
@@ -113,6 +139,9 @@ export const gestionRouter = router({
     list: publicProcedure.query(() => db.getRecetas()),
     byProducto: publicProcedure.input(z.number()).query(({ input }) => db.getRecetasByProducto(input)),
     create: publicProcedure.input(recetaSchema).mutation(({ input }) => {
+      if (input.productoId === input.insumoId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Un producto no puede ser componente de sí mismo." });
+      }
       return db.createReceta({
         productoId: input.productoId,
         insumoId: input.insumoId,
@@ -122,15 +151,18 @@ export const gestionRouter = router({
     }),
     update: publicProcedure.input(z.object({
       id: z.number(),
-      productoId: z.number().optional(),
       insumoId: z.number().optional(),
-      cantidad: z.coerce.number().optional(),
-      unidad: z.string().optional(),
-    })).mutation(({ input }) => {
+      cantidad: z.coerce.number().positive().optional(),
+      unidad: z.string().min(1).optional(),
+    })).mutation(async ({ input }) => {
       const { id, ...data } = input;
-      const dataToUpdate: any = {};
+      const actual = await db.getRecetaById(id);
+      if (!actual) throw new TRPCError({ code: "NOT_FOUND", message: "Componente no encontrado" });
+      if (data.insumoId !== undefined && data.insumoId === actual.productoId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Un producto no puede ser componente de sí mismo." });
+      }
+      const dataToUpdate: Record<string, unknown> = {};
       if (data.cantidad !== undefined) dataToUpdate.cantidad = data.cantidad.toString();
-      if (data.productoId !== undefined) dataToUpdate.productoId = data.productoId;
       if (data.insumoId !== undefined) dataToUpdate.insumoId = data.insumoId;
       if (data.unidad !== undefined) dataToUpdate.unidad = data.unidad;
       return db.updateReceta(id, dataToUpdate);
@@ -141,109 +173,86 @@ export const gestionRouter = router({
   // PRODUCCION
   produccion: router({
     list: publicProcedure.query(() => db.getProduccion()),
-    create: publicProcedure.input(produccionSchema).mutation(async ({ input }) => {
-      // Validar que existan recetas para el producto
-      const recetas = await db.getRecetasByProducto(input.productoId);
-
-      // Validar insumos suficientes antes de crear nada
-      for (const receta of recetas) {
-        const insumo = await db.getInsumoById(receta.insumoId);
-        if (!insumo) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Insumo de receta no encontrado (id: ${receta.insumoId})` });
-        }
-        const necesario = parseFloat(receta.cantidad?.toString() || "0") * input.cantidad;
-        const disponible = parseFloat(insumo.cantidad?.toString() || "0");
-        if (disponible < necesario - 0.001) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Insumo insuficiente: "${insumo.descripcion}". Necesario: ${necesario.toFixed(3)} ${insumo.unidad}, Disponible: ${disponible.toFixed(3)} ${insumo.unidad}`,
-          });
-        }
-      }
-
-      // Crear registro de producción
-      await db.createProduccion({
-        fecha: input.fecha,
-        productoId: input.productoId,
-        cantidad: input.cantidad.toString(),
-        responsable: input.responsable,
-        costoMP: input.costoMP.toString(),
-      });
-
-      // Descontar insumos
-      for (const receta of recetas) {
-        const cantidadADescontar = parseFloat(receta.cantidad?.toString() || "0") * input.cantidad;
-        await db.decrementInsumoStock(receta.insumoId, cantidadADescontar);
-      }
-
-      // Sumar stock del producto
-      await db.updateProductoStock(input.productoId, input.cantidad);
-
+    create: publicProcedure.input(produccionSchema).mutation(({ input }) => {
+      svc.crearProduccion(input);
       return { success: true };
     }),
-    delete: publicProcedure.input(z.number()).mutation(async ({ input }) => {
-      const prod = await db.getProduccionById(input);
-      if (prod) {
-        const cantidad = parseFloat(prod.cantidad?.toString() || "0");
-        // Revertir stock del producto
-        await db.updateProductoStock(prod.productoId, -cantidad);
-        // Restaurar insumos descontados según la receta
-        const recetas = await db.getRecetasByProducto(prod.productoId);
-        for (const receta of recetas) {
-          const cantidadARestaurar = parseFloat(receta.cantidad?.toString() || "0") * cantidad;
-          await db.incrementInsumoStock(receta.insumoId, cantidadARestaurar);
-        }
-      }
-      return db.deleteProduccion(input);
+    update: publicProcedure.input(produccionSchema.extend({ id: z.number() })).mutation(({ input }) => {
+      const { id, ...data } = input;
+      svc.editarProduccion(id, data);
+      return { success: true };
+    }),
+    delete: publicProcedure.input(z.number()).mutation(({ input }) => {
+      svc.eliminarProduccion(input);
+      return { success: true };
+    }),
+  }),
+
+  // CLIENTES
+  clientes: router({
+    list: publicProcedure.query(() => db.getClientes()),
+    create: publicProcedure.input(clienteSchema).mutation(({ input }) => ({ id: svc.crearCliente(input) })),
+    update: publicProcedure.input(clienteSchema.extend({ id: z.number() })).mutation(({ input }) => {
+      const { id, ...data } = input;
+      svc.actualizarCliente(id, data);
+      return { success: true };
+    }),
+    delete: publicProcedure.input(z.number()).mutation(({ input }) => {
+      svc.eliminarCliente(input);
+      return { success: true };
+    }),
+  }),
+
+  // CUENTA CORRIENTE
+  cuentaCorriente: router({
+    movimientos: publicProcedure.input(z.number()).query(({ input }) => svc.listarMovimientos(input)),
+    registrarPago: publicProcedure.input(z.object({
+      clienteId: z.number(),
+      fecha: z.string().min(1),
+      monto: z.coerce.number().positive("El monto debe ser mayor a 0"),
+      concepto: textoOpcional,
+    })).mutation(({ input }) => {
+      svc.registrarPago(input);
+      return { success: true };
+    }),
+    eliminarMovimiento: publicProcedure.input(z.number()).mutation(({ input }) => {
+      svc.eliminarMovimiento(input);
+      return { success: true };
     }),
   }),
 
   // VENTAS
   ventas: router({
-    list: publicProcedure.query(() => db.getVentas()),
-    create: publicProcedure.input(ventaSchema).mutation(async ({ input }) => {
-      // Validar stock disponible
-      const producto = await db.getProductoById(input.productoId);
-      if (!producto) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Producto no encontrado" });
-      }
-      const stockActual = parseFloat(producto.stock?.toString() || "0");
-      if (stockActual < input.cantidad - 0.001) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Stock insuficiente. Disponible: ${stockActual.toFixed(3)} unidades`,
-        });
-      }
-
-      // Calcular total en el servidor (no confiar en el frontend)
-      const total = input.cantidad * input.precioUnitario;
-
-      await db.createVenta({
-        fecha: input.fecha,
-        remito: input.remito,
-        dniCuit: input.dniCuit,
-        direccion: input.direccion,
-        localidad: input.localidad,
-        entrega: input.entrega,
-        productoId: input.productoId,
-        cantidad: input.cantidad.toString(),
-        precioUnitario: input.precioUnitario.toString(),
-        total: total.toString(),
-      });
-
-      // Descontar stock
-      await db.updateProductoStock(input.productoId, -input.cantidad);
-
+    list: publicProcedure.query(() => svc.listarVentas()),
+    create: publicProcedure.input(ventaSchema).mutation(({ input }) => {
+      const venta = svc.crearVenta(input);
+      return { success: true, id: venta.id, numero: venta.numero };
+    }),
+    delete: publicProcedure.input(z.number()).mutation(({ input }) => {
+      svc.eliminarVenta(input);
       return { success: true };
     }),
-    delete: publicProcedure.input(z.number()).mutation(async ({ input }) => {
-      // Restaurar stock al eliminar una venta
-      const venta = await db.getVentaById(input);
-      if (venta) {
-        const cantidad = parseFloat(venta.cantidad?.toString() || "0");
-        await db.updateProductoStock(venta.productoId, cantidad);
-      }
-      return db.deleteVenta(input);
+    /** Asigna (si todavía no tiene) el número de remito de la venta y lo devuelve. */
+    generarRemito: publicProcedure.input(z.number()).mutation(({ input }) => ({
+      remitoNumero: svc.generarRemito(input),
+    })),
+  }),
+
+  // COTIZACIONES
+  cotizaciones: router({
+    list: publicProcedure.query(() => svc.listarCotizaciones()),
+    create: publicProcedure.input(cotizacionSchema).mutation(({ input }) => {
+      const cot = svc.crearCotizacion(input);
+      return { success: true, id: cot.id, numero: cot.numero };
+    }),
+    update: publicProcedure.input(cotizacionSchema.extend({ id: z.number() })).mutation(({ input }) => {
+      const { id, ...data } = input;
+      svc.actualizarCotizacion(id, data);
+      return { success: true };
+    }),
+    delete: publicProcedure.input(z.number()).mutation(({ input }) => {
+      svc.eliminarCotizacion(input);
+      return { success: true };
     }),
   }),
 
@@ -251,7 +260,6 @@ export const gestionRouter = router({
   dashboard: router({
     stats: publicProcedure.query(() => db.getDashboardStats()),
     stockBajo: publicProcedure.query(() => db.getStockBajo()),
-    insumosBajo: publicProcedure.query(() => db.getInsumosBajo()),
   }),
 
   // REPORTES
@@ -260,21 +268,17 @@ export const gestionRouter = router({
       .input(z.object({ mes: z.number(), año: z.number() }))
       .query(async ({ input }) => {
         const { generarHTMLVentasMensuales } = await import('./pdf-generator');
-        const ventas = await db.getVentas();
-        const productos = await db.getProductos();
         // Parsear fecha directamente del string "YYYY-MM-DD" para evitar bug de timezone
-        const ventasFiltradas = ventas.filter(v => {
-          const [year, month] = (v.fecha as unknown as string).split('-').map(Number);
+        const ventasFiltradas = svc.listarVentas().filter(v => {
+          const [year, month] = v.fecha.split('-').map(Number);
           return month === input.mes && year === input.año;
         });
-        return generarHTMLVentasMensuales(ventasFiltradas, productos, input.mes, input.año);
+        return generarHTMLVentasMensuales(ventasFiltradas, input.mes, input.año);
       }),
 
     stockMensual: publicProcedure.query(async () => {
       const { generarHTMLStockMensual } = await import('./pdf-generator');
-      const productos = await db.getProductos();
-      const insumos = await db.getInsumos();
-      return generarHTMLStockMensual(productos, insumos);
+      return generarHTMLStockMensual(await db.getProductos());
     }),
   }),
 });

@@ -5,50 +5,52 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, CheckCircle2, XCircle, AlertCircle, FlaskConical, PackagePlus, X } from 'lucide-react';
+import { Plus, Trash2, Edit2, CheckCircle2, XCircle, AlertCircle, FlaskConical, PackagePlus, X } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
+import { SearchSelect } from '@/components/SearchSelect';
+import { qty, toNum } from '@/lib/format';
 
-const emptyNuevoInsumo = { codigo: '', descripcion: '', unidad: '', cantidad: '0', precioUnitario: '0' };
+const emptyNuevoComponente = { codigo: '', nombre: '', unidad: '', stock: '0', costo: '0' };
 const emptyNuevoProducto = { nombre: '', stock: '0', precioVenta: '0' };
+const emptyComponente = { insumoId: '', cantidad: '', unidad: '' };
 
 export default function Recetas() {
   const [selectedProductoId, setSelectedProductoId] = useState<string>('');
   const [cantidadProducir, setCantidadProducir] = useState<string>('1');
 
-  // Dialog agregar componente
+  // Dialog agregar / editar componente
   const [open, setOpen] = useState(false);
-  const [formData, setFormData] = useState({ insumoId: '', cantidad: '', unidad: '' });
+  const [editingRecetaId, setEditingRecetaId] = useState<number | null>(null);
+  const [formData, setFormData] = useState(emptyComponente);
 
-  // Inline: crear nuevo insumo dentro del dialog
-  const [showNuevoInsumo, setShowNuevoInsumo] = useState(false);
-  const [nuevoInsumo, setNuevoInsumo] = useState(emptyNuevoInsumo);
+  // Inline: crear un componente nuevo dentro del dialog (se guarda como producto)
+  const [showNuevoComponente, setShowNuevoComponente] = useState(false);
+  const [nuevoComponente, setNuevoComponente] = useState(emptyNuevoComponente);
 
   // Inline: crear nuevo producto en el selector principal
   const [showNuevoProducto, setShowNuevoProducto] = useState(false);
   const [nuevoProducto, setNuevoProducto] = useState(emptyNuevoProducto);
 
   const { data: recetas, refetch } = trpc.recetas.list.useQuery();
-  const { data: productos, refetch: refetchProductos } = trpc.productos.list.useQuery();
-  const { data: insumos, refetch: refetchInsumos } = trpc.insumos.list.useQuery();
+  const { data: productos = [], refetch: refetchProductos } = trpc.productos.list.useQuery();
 
   const createRecetaMutation = trpc.recetas.create.useMutation();
+  const updateRecetaMutation = trpc.recetas.update.useMutation();
   const deleteRecetaMutation = trpc.recetas.delete.useMutation();
-  const createInsumoMutation = trpc.insumos.create.useMutation();
   const createProductoMutation = trpc.productos.create.useMutation();
 
-  const productoSeleccionado = productos?.find(p => p.id.toString() === selectedProductoId);
+  const productoSeleccionado = productos.find(p => p.id.toString() === selectedProductoId);
   const recetasProducto = recetas?.filter(r => r.productoId?.toString() === selectedProductoId) || [];
   const unidadesAProducir = parseFloat(cantidadProducir || '1') || 1;
 
-  const getInsumo = (id: number) => insumos?.find(i => i.id === id);
+  const getComponente = (id: number) => productos.find(p => p.id === id);
 
-  const getEstado = (receta: any) => {
-    const insumo = getInsumo(receta.insumoId);
-    if (!insumo) return 'unknown';
-    const stock = parseFloat(insumo.cantidad?.toString() || '0');
-    const necesario = parseFloat(receta.cantidad?.toString() || '0') * unidadesAProducir;
+  const getEstado = (receta: { insumoId: number; cantidad: string }) => {
+    const comp = getComponente(receta.insumoId);
+    if (!comp) return 'unknown';
+    const stock = toNum(comp.stock);
+    const necesario = toNum(receta.cantidad) * unidadesAProducir;
     if (stock >= necesario) return 'ok';
     if (stock > 0) return 'bajo';
     return 'sin_stock';
@@ -57,21 +59,50 @@ export default function Recetas() {
   const todosDisponibles =
     recetasProducto.length > 0 && recetasProducto.every(r => getEstado(r) === 'ok');
 
-  // ── Agregar componente a receta ──
+  const abrirAgregar = () => {
+    setEditingRecetaId(null);
+    setFormData(emptyComponente);
+    setShowNuevoComponente(false);
+    setOpen(true);
+  };
+
+  const abrirEditar = (receta: NonNullable<typeof recetas>[number]) => {
+    setEditingRecetaId(receta.id);
+    setFormData({
+      insumoId: receta.insumoId.toString(),
+      cantidad: parseFloat(receta.cantidad).toString(),
+      unidad: receta.unidad,
+    });
+    setShowNuevoComponente(false);
+    setOpen(true);
+  };
+
+  // ── Agregar / editar componente de la receta ──
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProductoId) { toast.error('Seleccioná un producto primero'); return; }
+    if (!formData.insumoId) { toast.error('Elegí el componente'); return; }
     try {
-      await createRecetaMutation.mutateAsync({
-        productoId: parseInt(selectedProductoId),
-        insumoId: parseInt(formData.insumoId),
-        cantidad: parseFloat(formData.cantidad),
-        unidad: formData.unidad,
-      });
-      toast.success('Componente agregado a la receta');
+      if (editingRecetaId) {
+        await updateRecetaMutation.mutateAsync({
+          id: editingRecetaId,
+          insumoId: parseInt(formData.insumoId),
+          cantidad: parseFloat(formData.cantidad),
+          unidad: formData.unidad,
+        });
+        toast.success('Componente actualizado');
+      } else {
+        await createRecetaMutation.mutateAsync({
+          productoId: parseInt(selectedProductoId),
+          insumoId: parseInt(formData.insumoId),
+          cantidad: parseFloat(formData.cantidad),
+          unidad: formData.unidad,
+        });
+        toast.success('Componente agregado a la receta');
+      }
       setOpen(false);
-      setFormData({ insumoId: '', cantidad: '', unidad: '' });
-      setShowNuevoInsumo(false);
+      setFormData(emptyComponente);
+      setShowNuevoComponente(false);
       refetch();
     } catch (error: any) {
       toast.error(error?.message || 'Error al guardar');
@@ -90,31 +121,27 @@ export default function Recetas() {
     }
   };
 
-  // ── Crear nuevo insumo desde el dialog ──
-  const handleCrearInsumo = async () => {
-    if (!nuevoInsumo.codigo || !nuevoInsumo.descripcion || !nuevoInsumo.unidad) {
-      toast.error('Completá código, descripción y unidad');
+  // ── Crear un componente nuevo desde el dialog (queda en Productos) ──
+  const handleCrearComponente = async () => {
+    if (!nuevoComponente.nombre || !nuevoComponente.unidad) {
+      toast.error('Completá descripción y unidad');
       return;
     }
     try {
-      await createInsumoMutation.mutateAsync({
-        codigo: nuevoInsumo.codigo,
-        descripcion: nuevoInsumo.descripcion,
-        unidad: nuevoInsumo.unidad,
-        cantidad: parseFloat(nuevoInsumo.cantidad || '0'),
-        precioUnitario: parseFloat(nuevoInsumo.precioUnitario || '0'),
+      const { id } = await createProductoMutation.mutateAsync({
+        codigo: nuevoComponente.codigo,
+        nombre: nuevoComponente.nombre,
+        unidad: nuevoComponente.unidad,
+        stock: parseFloat(nuevoComponente.stock || '0'),
+        costo: parseFloat(nuevoComponente.costo || '0'),
       });
-      toast.success(`Insumo "${nuevoInsumo.descripcion}" creado`);
-      const updated = await refetchInsumos();
-      // Auto-seleccionar el recién creado
-      const creado = updated.data?.find(i => i.codigo === nuevoInsumo.codigo && i.descripcion === nuevoInsumo.descripcion);
-      if (creado) {
-        setFormData(f => ({ ...f, insumoId: creado.id.toString(), unidad: creado.unidad }));
-      }
-      setNuevoInsumo(emptyNuevoInsumo);
-      setShowNuevoInsumo(false);
+      toast.success(`"${nuevoComponente.nombre}" creado en Productos`);
+      await refetchProductos();
+      setFormData(f => ({ ...f, insumoId: id.toString(), unidad: nuevoComponente.unidad }));
+      setNuevoComponente(emptyNuevoComponente);
+      setShowNuevoComponente(false);
     } catch (error: any) {
-      toast.error(error?.message || 'Error al crear insumo');
+      toast.error(error?.message || 'Error al crear el componente');
     }
   };
 
@@ -122,15 +149,14 @@ export default function Recetas() {
   const handleCrearProducto = async () => {
     if (!nuevoProducto.nombre) { toast.error('Ingresá el nombre del producto'); return; }
     try {
-      await createProductoMutation.mutateAsync({
+      const { id } = await createProductoMutation.mutateAsync({
         nombre: nuevoProducto.nombre,
         stock: parseFloat(nuevoProducto.stock || '0'),
         precioVenta: parseFloat(nuevoProducto.precioVenta || '0'),
       });
       toast.success(`Producto "${nuevoProducto.nombre}" creado`);
-      const updated = await refetchProductos();
-      const creado = updated.data?.find(p => p.nombre === nuevoProducto.nombre);
-      if (creado) setSelectedProductoId(creado.id.toString());
+      await refetchProductos();
+      setSelectedProductoId(id.toString());
       setNuevoProducto(emptyNuevoProducto);
       setShowNuevoProducto(false);
     } catch (error: any) {
@@ -139,9 +165,26 @@ export default function Recetas() {
   };
 
   const autocompletarUnidad = (insumoId: string) => {
-    const insumo = insumos?.find(i => i.id.toString() === insumoId);
-    setFormData(f => ({ ...f, insumoId, unidad: insumo?.unidad || '' }));
+    const comp = productos.find(p => p.id.toString() === insumoId);
+    setFormData(f => ({ ...f, insumoId, unidad: comp?.unidad || f.unidad }));
   };
+
+  const opcionesProductos = productos.map(p => ({
+    value: p.id.toString(),
+    label: p.nombre,
+    search: `${p.codigo ?? ''} ${p.codigoProveedor ?? ''}`,
+    hint: p.codigo ?? undefined,
+  }));
+
+  // Un producto no puede ser componente de sí mismo
+  const opcionesComponentes = productos
+    .filter(p => p.id.toString() !== selectedProductoId)
+    .map(p => ({
+      value: p.id.toString(),
+      label: p.nombre,
+      search: `${p.codigo ?? ''} ${p.codigoProveedor ?? ''}`,
+      hint: `${p.codigo ? `${p.codigo} · ` : ''}stock: ${qty(p.stock)} ${p.unidad}`,
+    }));
 
   return (
     <div className="space-y-6">
@@ -160,16 +203,12 @@ export default function Recetas() {
           <div className="flex gap-3 items-end flex-wrap">
             <div className="flex-1 min-w-[220px]">
               <label className="text-sm font-medium mb-1 block">Producto</label>
-              <Select value={selectedProductoId} onValueChange={setSelectedProductoId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar producto..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {productos?.map(p => (
-                    <SelectItem key={p.id} value={p.id.toString()}>{p.nombre}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchSelect
+                value={selectedProductoId}
+                onChange={setSelectedProductoId}
+                placeholder="Seleccionar producto..."
+                options={opcionesProductos}
+              />
             </div>
             <div className="w-40">
               <label className="text-sm font-medium mb-1 block">Unidades a producir</label>
@@ -211,7 +250,7 @@ export default function Recetas() {
                   onChange={e => setNuevoProducto(f => ({ ...f, stock: e.target.value }))}
                 />
                 <Input
-                  type="number" step="0.01" placeholder="Precio de venta"
+                  type="number" step="0.01" placeholder="Precio de lista"
                   value={nuevoProducto.precioVenta}
                   onChange={e => setNuevoProducto(f => ({ ...f, precioVenta: e.target.value }))}
                 />
@@ -248,11 +287,7 @@ export default function Recetas() {
                   {todosDisponibles ? '✓ Stock suficiente' : '✗ Stock insuficiente'}
                 </Badge>
               )}
-              <Button
-                size="sm"
-                className="bg-orange-600 hover:bg-orange-700"
-                onClick={() => { setFormData({ insumoId: '', cantidad: '', unidad: '' }); setShowNuevoInsumo(false); setOpen(true); }}
-              >
+              <Button size="sm" className="bg-orange-600 hover:bg-orange-700" onClick={abrirAgregar}>
                 <Plus className="w-4 h-4 mr-1" /> Agregar componente
               </Button>
             </div>
@@ -268,7 +303,7 @@ export default function Recetas() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-orange-50 hover:bg-orange-50">
-                    <TableHead>Insumo</TableHead>
+                    <TableHead>Componente</TableHead>
                     <TableHead>Necesario por unidad</TableHead>
                     <TableHead>Total necesario</TableHead>
                     <TableHead>Stock actual</TableHead>
@@ -278,21 +313,24 @@ export default function Recetas() {
                 </TableHeader>
                 <TableBody>
                   {recetasProducto.map(receta => {
-                    const insumo = getInsumo(receta.insumoId);
-                    const stockActual = parseFloat(insumo?.cantidad?.toString() || '0');
-                    const necesarioPorUnidad = parseFloat(receta.cantidad?.toString() || '0');
+                    const comp = getComponente(receta.insumoId);
+                    const stockActual = toNum(comp?.stock);
+                    const necesarioPorUnidad = toNum(receta.cantidad);
                     const totalNecesario = necesarioPorUnidad * unidadesAProducir;
                     const estado = getEstado(receta);
                     return (
                       <TableRow key={receta.id} className="hover:bg-orange-50/50">
-                        <TableCell className="font-medium">{insumo?.descripcion || `Insumo ${receta.insumoId}`}</TableCell>
-                        <TableCell className="text-gray-600">{necesarioPorUnidad.toFixed(3)} {receta.unidad}</TableCell>
-                        <TableCell className="font-semibold">{totalNecesario.toFixed(3)} {receta.unidad}</TableCell>
+                        <TableCell className="font-medium">
+                          {comp?.nombre || `Producto ${receta.insumoId}`}
+                          {comp?.codigo && <span className="ml-2 font-mono text-xs text-gray-400">{comp.codigo}</span>}
+                        </TableCell>
+                        <TableCell className="text-gray-600">{qty(necesarioPorUnidad)} {receta.unidad}</TableCell>
+                        <TableCell className="font-semibold">{qty(totalNecesario)} {receta.unidad}</TableCell>
                         <TableCell className={
                           estado === 'ok' ? 'text-green-700 font-semibold' :
                           estado === 'bajo' ? 'text-yellow-700 font-semibold' : 'text-red-700 font-semibold'
                         }>
-                          {stockActual.toFixed(3)} {insumo?.unidad}
+                          {qty(stockActual)} {comp?.unidad}
                         </TableCell>
                         <TableCell>
                           {estado === 'ok' && <span className="flex items-center gap-1 text-green-700 text-sm font-medium"><CheckCircle2 className="w-4 h-4" /> Disponible</span>}
@@ -300,8 +338,11 @@ export default function Recetas() {
                           {estado === 'sin_stock' && <span className="flex items-center gap-1 text-red-700 text-sm font-medium"><XCircle className="w-4 h-4" /> Sin stock</span>}
                           {estado === 'unknown' && <span className="text-gray-400 text-sm">No encontrado</span>}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" onClick={() => handleDelete(receta.id)} className="text-red-600 hover:text-red-700 hover:bg-red-100">
+                        <TableCell className="text-right space-x-1 whitespace-nowrap">
+                          <Button variant="ghost" size="sm" onClick={() => abrirEditar(receta)} className="text-orange-600 hover:text-orange-700 hover:bg-orange-100" title="Editar componente">
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleDelete(receta.id)} className="text-red-600 hover:text-red-700 hover:bg-red-100" title="Quitar de la receta">
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </TableCell>
@@ -322,94 +363,88 @@ export default function Recetas() {
         </Card>
       )}
 
-      {/* Dialog: agregar componente */}
-      <Dialog open={open} onOpenChange={o => { setOpen(o); if (!o) setShowNuevoInsumo(false); }}>
+      {/* Dialog: agregar / editar componente */}
+      <Dialog open={open} onOpenChange={o => { setOpen(o); if (!o) setShowNuevoComponente(false); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Agregar componente</DialogTitle>
+            <DialogTitle>{editingRecetaId ? 'Editar componente' : 'Agregar componente'}</DialogTitle>
             <DialogDescription>
-              Agregá un insumo a la receta de <strong>{productoSeleccionado?.nombre}</strong>
+              {editingRecetaId ? 'Modificá el componente de la receta de ' : 'Agregá un componente a la receta de '}
+              <strong>{productoSeleccionado?.nombre}</strong>
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Selector de insumo */}
-            {!showNuevoInsumo && (
+            {/* Selector de componente */}
+            {!showNuevoComponente && (
               <div>
-                <label className="text-sm font-medium mb-1 block">Insumo</label>
-                <Select value={formData.insumoId} onValueChange={autocompletarUnidad}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar insumo..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {insumos?.map(i => (
-                      <SelectItem key={i.id} value={i.id.toString()}>
-                        {i.descripcion}
-                        <span className="text-gray-400 ml-2 text-xs">
-                          (stock: {parseFloat(i.cantidad?.toString() || '0').toFixed(3)} {i.unidad})
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-2 w-full border-orange-300 text-orange-700 hover:bg-orange-50"
-                  onClick={() => { setShowNuevoInsumo(true); setNuevoInsumo(emptyNuevoInsumo); }}
-                >
-                  <PackagePlus className="w-4 h-4 mr-2" />
-                  ¿No está el insumo? Crear nuevo
-                </Button>
+                <label className="text-sm font-medium mb-1 block">Componente</label>
+                <SearchSelect
+                  value={formData.insumoId}
+                  onChange={autocompletarUnidad}
+                  placeholder="Seleccionar componente..."
+                  options={opcionesComponentes}
+                />
+                {!editingRecetaId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2 w-full border-orange-300 text-orange-700 hover:bg-orange-50"
+                    onClick={() => { setShowNuevoComponente(true); setNuevoComponente(emptyNuevoComponente); }}
+                  >
+                    <PackagePlus className="w-4 h-4 mr-2" />
+                    ¿No está? Crear nuevo componente
+                  </Button>
+                )}
               </div>
             )}
 
-            {/* Formulario inline: crear nuevo insumo */}
-            {showNuevoInsumo && (
+            {/* Formulario inline: crear nuevo componente */}
+            {showNuevoComponente && (
               <div className="border border-orange-200 rounded-lg p-4 bg-orange-50 space-y-3">
-                <p className="text-sm font-semibold text-orange-800">Crear nuevo insumo</p>
+                <p className="text-sm font-semibold text-orange-800">Crear nuevo componente <span className="font-normal">(se guarda en Productos)</span></p>
                 <div className="grid grid-cols-2 gap-3">
                   <Input
-                    placeholder="Código *"
-                    value={nuevoInsumo.codigo}
-                    onChange={e => setNuevoInsumo(f => ({ ...f, codigo: e.target.value }))}
+                    placeholder="Código interno"
+                    value={nuevoComponente.codigo}
+                    onChange={e => setNuevoComponente(f => ({ ...f, codigo: e.target.value }))}
                   />
                   <Input
                     placeholder="Unidad (kg, L, m...) *"
-                    value={nuevoInsumo.unidad}
-                    onChange={e => setNuevoInsumo(f => ({ ...f, unidad: e.target.value }))}
+                    value={nuevoComponente.unidad}
+                    onChange={e => setNuevoComponente(f => ({ ...f, unidad: e.target.value }))}
                   />
                 </div>
                 <Input
                   placeholder="Descripción *"
-                  value={nuevoInsumo.descripcion}
-                  onChange={e => setNuevoInsumo(f => ({ ...f, descripcion: e.target.value }))}
+                  value={nuevoComponente.nombre}
+                  onChange={e => setNuevoComponente(f => ({ ...f, nombre: e.target.value }))}
                 />
                 <div className="grid grid-cols-2 gap-3">
                   <Input
                     type="number" step="0.001" placeholder="Stock inicial"
-                    value={nuevoInsumo.cantidad}
-                    onChange={e => setNuevoInsumo(f => ({ ...f, cantidad: e.target.value }))}
+                    value={nuevoComponente.stock}
+                    onChange={e => setNuevoComponente(f => ({ ...f, stock: e.target.value }))}
                   />
                   <Input
-                    type="number" step="0.01" placeholder="Precio unitario"
-                    value={nuevoInsumo.precioUnitario}
-                    onChange={e => setNuevoInsumo(f => ({ ...f, precioUnitario: e.target.value }))}
+                    type="number" step="0.01" placeholder="Costo unitario"
+                    value={nuevoComponente.costo}
+                    onChange={e => setNuevoComponente(f => ({ ...f, costo: e.target.value }))}
                   />
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="w-full bg-orange-600 hover:bg-orange-700"
-                  onClick={handleCrearInsumo}
-                >
-                  <Plus className="w-4 h-4 mr-1" /> Crear insumo y usar en receta
-                </Button>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => setShowNuevoComponente(false)}>
+                    Cancelar
+                  </Button>
+                  <Button type="button" size="sm" className="flex-1 bg-orange-600 hover:bg-orange-700" onClick={handleCrearComponente}>
+                    <Plus className="w-4 h-4 mr-1" /> Crear y usar en receta
+                  </Button>
+                </div>
               </div>
             )}
 
             {/* Cantidad y unidad */}
-            {!showNuevoInsumo && (
+            {!showNuevoComponente && (
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium mb-1 block">Cantidad por unidad</label>
@@ -432,26 +467,10 @@ export default function Recetas() {
               </div>
             )}
 
-            {!showNuevoInsumo && (
-              <div className="flex flex-col gap-2">
-                <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700">
-                  <Plus className="w-4 h-4 mr-2" /> Agregar a la receta
-                </Button>
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-gray-200" /></div>
-                  <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-gray-400">o</span></div>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-orange-300 text-orange-700 hover:bg-orange-50"
-                  onClick={() => { setOpen(false); setTimeout(() => { setShowNuevoProducto(true); setNuevoProducto(emptyNuevoProducto); }, 150); }}
-                >
-                  <PackagePlus className="w-4 h-4 mr-2" />
-                  ¿No está el producto? Crear nuevo
-                </Button>
-              </div>
+            {!showNuevoComponente && (
+              <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700">
+                {editingRecetaId ? 'Guardar cambios' : <><Plus className="w-4 h-4 mr-2" /> Agregar a la receta</>}
+              </Button>
             )}
           </form>
         </DialogContent>

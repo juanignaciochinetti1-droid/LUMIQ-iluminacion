@@ -6,11 +6,12 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
-import Insumos from "./pages/Insumos";
 import Productos from "./pages/Productos";
 import Recetas from "./pages/Recetas";
 import Produccion from "./pages/Produccion";
+import Cotizaciones from "./pages/Cotizaciones";
 import Ventas from "./pages/Ventas";
+import Clientes from "./pages/Clientes";
 import Reportes from "./pages/Reportes";
 
 function Router() {
@@ -19,11 +20,12 @@ function Router() {
       <Route path="/" nest>
         <DashboardLayout>
           <Route path="/" component={Dashboard} />
-          <Route path="/insumos" component={Insumos} />
           <Route path="/productos" component={Productos} />
           <Route path="/recetas" component={Recetas} />
           <Route path="/produccion" component={Produccion} />
+          <Route path="/cotizaciones" component={Cotizaciones} />
           <Route path="/ventas" component={Ventas} />
+          <Route path="/clientes" component={Clientes} />
           <Route path="/reportes" component={Reportes} />
         </DashboardLayout>
       </Route>

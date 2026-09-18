@@ -14,17 +14,18 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, PanelLeft, Package, Boxes, BookOpen, Zap, ShoppingCart, FileText } from "lucide-react";
+import { LayoutDashboard, PanelLeft, Package, BookOpen, Zap, ShoppingCart, FileText, Users, ClipboardList } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: Boxes, label: "Insumos", path: "/insumos" },
   { icon: Package, label: "Productos", path: "/productos" },
   { icon: BookOpen, label: "Recetas", path: "/recetas" },
   { icon: Zap, label: "Producción", path: "/produccion" },
+  { icon: ClipboardList, label: "Cotizaciones", path: "/cotizaciones" },
   { icon: ShoppingCart, label: "Ventas", path: "/ventas" },
+  { icon: Users, label: "Clientes", path: "/clientes" },
   { icon: FileText, label: "Reportes", path: "/reportes" },
 ];
 

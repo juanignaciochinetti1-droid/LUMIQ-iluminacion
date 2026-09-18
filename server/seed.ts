@@ -1,10 +1,11 @@
 // Seed inicial: productos, insumos, recetas y producción histórica enero 2026.
+// Productos e insumos viven en la misma tabla (`productos`).
 // Ejecutar con: npx tsx server/seed.ts (desde la raíz del proyecto)
 // SQLite: la DB se crea automáticamente en ./data/gestion.db
 
 import { eq, and } from 'drizzle-orm';
 import { db, initializeTables } from './db';
-import { insumos, productos, recetas, produccion } from '../drizzle/schema';
+import { productos, recetas, produccion } from '../drizzle/schema';
 
 // ─── PRODUCTOS ───────────────────────────────────────────────────────────────
 
@@ -525,13 +526,18 @@ export async function seed() {
   console.log(`Insertando ${PRODUCTS.length} productos...`);
   let prodAdded = 0, prodSkipped = 0;
   for (const prod of PRODUCTS) {
-    const ex = await db.select({ id: productos.id }).from(productos)
+    const ex = await db.select({ id: productos.id, codigo: productos.codigo }).from(productos)
       .where(eq(productos.nombre, prod.nombre)).limit(1);
     if (ex.length === 0) {
-      await db.insert(productos).values({ nombre: prod.nombre, stock: '0', precioVenta: '0' });
+      await db.insert(productos).values({ codigo: prod.code, nombre: prod.nombre, stock: '0', precioVenta: '0' });
       prodAdded++;
       process.stdout.write('+');
     } else {
+      // Bases anteriores no tenían código interno: se completa si está libre.
+      if (!ex[0].codigo) {
+        const enUso = await db.select({ id: productos.id }).from(productos).where(eq(productos.codigo, prod.code)).limit(1);
+        if (enUso.length === 0) await db.update(productos).set({ codigo: prod.code }).where(eq(productos.id, ex[0].id));
+      }
       prodSkipped++;
       process.stdout.write('.');
     }
@@ -546,20 +552,20 @@ export async function seed() {
     if (found) prodMap[p.code] = found.id;
   }
 
-  // 3. Insumos
+  // 3. Insumos (se guardan como productos, identificados por su código interno)
   console.log(`\nInsertando ${INSUMOS.length} insumos...`);
   let insAdded = 0, insUpdated = 0, insSkipped = 0;
   for (const ins of INSUMOS) {
-    const ex = await db.select({ id: insumos.id, descripcion: insumos.descripcion }).from(insumos)
-      .where(eq(insumos.codigo, ins.code)).limit(1);
+    const ex = await db.select({ id: productos.id, nombre: productos.nombre }).from(productos)
+      .where(eq(productos.codigo, ins.code)).limit(1);
     if (ex.length === 0) {
-      await db.insert(insumos).values({
-        codigo: ins.code, descripcion: ins.descripcion, unidad: 'u', cantidad: '0', precioUnitario: '0',
+      await db.insert(productos).values({
+        codigo: ins.code, nombre: ins.descripcion, unidad: 'u', stock: '0', costo: '0', precioVenta: '0',
       });
       insAdded++;
       process.stdout.write('+');
-    } else if (ex[0].descripcion === '(pendiente)') {
-      await db.update(insumos).set({ descripcion: ins.descripcion }).where(eq(insumos.codigo, ins.code));
+    } else if (ex[0].nombre === '(pendiente)') {
+      await db.update(productos).set({ nombre: ins.descripcion }).where(eq(productos.codigo, ins.code));
       insUpdated++;
       process.stdout.write('U');
     } else {
@@ -570,7 +576,7 @@ export async function seed() {
   console.log(`\n  ${insAdded} nuevos, ${insUpdated} actualizados, ${insSkipped} sin cambios.`);
 
   // 4. Mapear IDs de insumos
-  const allInsumos = await db.select({ id: insumos.id, codigo: insumos.codigo }).from(insumos);
+  const allInsumos = await db.select({ id: productos.id, codigo: productos.codigo }).from(productos);
   const insMap: Record<string, number> = {};
   for (const ins of INSUMOS) {
     const found = allInsumos.find(row => row.codigo === ins.code);
@@ -647,7 +653,9 @@ export async function seed() {
 
 // Permite seguir ejecutando "npx tsx server/seed.ts" manualmente,
 // sin llamar a process.exit() cuando se importa seed() desde el servidor.
-const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}`;
+// Se compara por nombre de archivo: cuando el servidor está empaquetado el seed queda dentro del bundle
+// (index.js / server.mjs) y nunca debe ejecutarse solo ni cerrar el proceso.
+const isMainModule = /[\\/]seed\.(ts|js|mjs)$/.test(process.argv[1] ?? '');
 if (isMainModule) {
   seed()
     .then(() => process.exit(0))

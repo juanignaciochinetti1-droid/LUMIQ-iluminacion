@@ -1,11 +1,11 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { mkdirSync, existsSync } from "fs";
+import { mkdirSync } from "fs";
 import path from "path";
 import {
-  InsertUser, InsertInsumo, InsertProducto, InsertReceta, InsertProduccion, InsertVenta,
-  users, insumos, productos, recetas, produccion, ventas,
+  InsertUser, InsertProducto, InsertReceta, InsertCliente,
+  users, productos, recetas, produccion, clientes, ventas, ventaItems,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -17,7 +17,7 @@ function resolveDbPath(): string {
   return path.join(dataDir, "gestion.db");
 }
 
-const sqlite = new Database(resolveDbPath());
+export const sqlite = new Database(resolveDbPath());
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
 
@@ -25,6 +25,112 @@ export const db = drizzle(sqlite);
 
 export function getDb() {
   return db;
+}
+
+/** Ejecuta `fn` en una transacción: si lanza un error, se revierte todo. `fn` debe ser síncrona. */
+export function runInTransaction<T>(fn: () => T): T {
+  return sqlite.transaction(fn)();
+}
+
+// ==================== ESQUEMA Y MIGRACIONES ====================
+const tableExists = (name: string) =>
+  !!sqlite.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
+
+const columnNames = (table: string) =>
+  (sqlite.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(c => c.name);
+
+function addColumnIfMissing(table: string, column: string, ddl: string) {
+  if (!columnNames(table).includes(column)) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+}
+
+const VENTAS_DDL = `
+  CREATE TABLE ventas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero INTEGER NOT NULL,
+    fecha TEXT NOT NULL,
+    remitoNumero INTEGER,
+    remito TEXT,
+    clienteId INTEGER,
+    dniCuit TEXT,
+    direccion TEXT,
+    localidad TEXT,
+    entrega TEXT,
+    condicionPago TEXT NOT NULL DEFAULT 'lista',
+    descuento TEXT NOT NULL DEFAULT '0',
+    subtotal TEXT NOT NULL DEFAULT '0',
+    total TEXT NOT NULL,
+    comentarios TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL
+  );
+`;
+
+/** Unifica la tabla `insumos` dentro de `productos` (una sola vez). La tabla vieja queda como respaldo. */
+function migrarInsumosAProductos() {
+  if (!tableExists("insumos")) return;
+  const now = new Date().toISOString();
+
+  sqlite.transaction(() => {
+    const viejos = sqlite.prepare("SELECT * FROM insumos ORDER BY id").all() as any[];
+    const codigoLibre = sqlite.prepare("SELECT 1 FROM productos WHERE codigo = ?");
+    const insertar = sqlite.prepare(`
+      INSERT INTO productos (codigo, nombre, unidad, stock, costo, precioVenta, descuentoContado, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, '0', '0', ?, ?)
+    `);
+
+    const nuevoId = new Map<number, number>();
+    for (const ins of viejos) {
+      let codigo: string = ins.codigo;
+      while (codigoLibre.get(codigo)) codigo = `${codigo}-INS`;
+      const r = insertar.run(
+        codigo, ins.descripcion, ins.unidad || "u", ins.cantidad ?? "0", ins.precioUnitario ?? "0",
+        ins.createdAt || now, ins.updatedAt || now,
+      );
+      nuevoId.set(ins.id, Number(r.lastInsertRowid));
+    }
+
+    const cambiarComponente = sqlite.prepare("UPDATE recetas SET insumoId = ? WHERE id = ?");
+    for (const rec of sqlite.prepare("SELECT id, insumoId FROM recetas").all() as any[]) {
+      const id = nuevoId.get(rec.insumoId);
+      if (id) cambiarComponente.run(id, rec.id);
+    }
+
+    sqlite.exec("DROP TABLE IF EXISTS insumos_migrado");
+    sqlite.exec("ALTER TABLE insumos RENAME TO insumos_migrado");
+  })();
+}
+
+/** Convierte las ventas de un renglón (formato viejo) a cabecera + líneas (una sola vez). */
+function migrarVentasACabeceraYLineas() {
+  if (!tableExists("ventas") || columnNames("ventas").includes("numero")) return;
+  const now = new Date().toISOString();
+
+  sqlite.transaction(() => {
+    if (!columnNames("ventas").includes("entrega")) sqlite.exec("ALTER TABLE ventas ADD COLUMN entrega TEXT");
+    const viejas = sqlite.prepare("SELECT * FROM ventas ORDER BY id").all() as any[];
+
+    sqlite.exec("DROP TABLE IF EXISTS ventas_migrado");
+    sqlite.exec("ALTER TABLE ventas RENAME TO ventas_migrado");
+    sqlite.exec(VENTAS_DDL);
+
+    const insertarVenta = sqlite.prepare(`
+      INSERT INTO ventas (id, numero, fecha, remito, dniCuit, direccion, localidad, entrega, condicionPago,
+                          descuento, subtotal, total, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'lista', '0', ?, ?, ?, ?)
+    `);
+    const insertarItem = sqlite.prepare(`
+      INSERT INTO venta_items (ventaId, productoId, cantidad, precioUnitario, descuento, subtotal)
+      VALUES (?, ?, ?, ?, '0', ?)
+    `);
+
+    viejas.forEach((v, i) => {
+      insertarVenta.run(
+        v.id, i + 1, v.fecha, v.remito ?? null, v.dniCuit ?? null, v.direccion ?? null, v.localidad ?? null,
+        v.entrega ?? null, v.total, v.total, v.createdAt || now, v.updatedAt || now,
+      );
+      insertarItem.run(v.id, v.productoId, v.cantidad, v.precioUnitario, v.total);
+    });
+  })();
 }
 
 export function initializeTables() {
@@ -41,26 +147,18 @@ export function initializeTables() {
       lastSignedIn TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS insumos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      codigo TEXT NOT NULL UNIQUE,
-      descripcion TEXT NOT NULL,
-      cantidad TEXT DEFAULT '0',
-      unidad TEXT NOT NULL,
-      precioUnitario TEXT DEFAULT '0',
-      createdAt TEXT NOT NULL,
-      updatedAt TEXT NOT NULL
-    );
-
     CREATE TABLE IF NOT EXISTS productos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nombre TEXT NOT NULL,
-      stock TEXT DEFAULT '0',
-      precioVenta TEXT DEFAULT '0',
-      createdAt TEXT NOT NULL,
-      updatedAt TEXT NOT NULL,
       codigo TEXT UNIQUE,
-      costo TEXT
+      codigoProveedor TEXT,
+      nombre TEXT NOT NULL,
+      unidad TEXT NOT NULL DEFAULT 'u',
+      stock TEXT DEFAULT '0',
+      costo TEXT,
+      precioVenta TEXT DEFAULT '0',
+      descuentoContado TEXT DEFAULT '0',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS recetas (
@@ -84,30 +182,101 @@ export function initializeTables() {
       updatedAt TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS ventas (
+    CREATE TABLE IF NOT EXISTS clientes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      fecha TEXT NOT NULL,
-      remito TEXT,
-      dniCuit TEXT,
+      nombre TEXT NOT NULL,
+      dni TEXT,
+      telefono TEXT,
       direccion TEXT,
-      localidad TEXT,
-      entrega TEXT,
-      productoId INTEGER NOT NULL,
-      cantidad TEXT NOT NULL,
-      precioUnitario TEXT NOT NULL,
-      total TEXT NOT NULL,
+      tieneCuentaCorriente INTEGER NOT NULL DEFAULT 0,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS movimientos_cuenta (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      clienteId INTEGER NOT NULL,
+      fecha TEXT NOT NULL,
+      tipo TEXT NOT NULL,
+      concepto TEXT,
+      monto TEXT NOT NULL,
+      ventaId INTEGER,
+      createdAt TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS venta_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ventaId INTEGER NOT NULL,
+      productoId INTEGER NOT NULL,
+      cantidad TEXT NOT NULL,
+      precioUnitario TEXT NOT NULL,
+      descuento TEXT NOT NULL DEFAULT '0',
+      subtotal TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS cotizaciones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      numero INTEGER NOT NULL,
+      fecha TEXT NOT NULL,
+      clienteId INTEGER,
+      condicionPago TEXT NOT NULL DEFAULT 'lista',
+      descuento TEXT NOT NULL DEFAULT '0',
+      subtotal TEXT NOT NULL DEFAULT '0',
+      total TEXT NOT NULL,
+      estado TEXT NOT NULL DEFAULT 'pendiente',
+      comentarios TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS cotizacion_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cotizacionId INTEGER NOT NULL,
+      productoId INTEGER NOT NULL,
+      cantidad TEXT NOT NULL,
+      precioUnitario TEXT NOT NULL,
+      descuento TEXT NOT NULL DEFAULT '0',
+      subtotal TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS contadores (
+      nombre TEXT PRIMARY KEY,
+      valor INTEGER NOT NULL DEFAULT 0
+    );
   `);
 
-  const ventasColumns = sqlite.prepare("PRAGMA table_info(ventas)").all() as { name: string }[];
-  if (!ventasColumns.some(c => c.name === "entrega")) {
-    sqlite.exec("ALTER TABLE ventas ADD COLUMN entrega TEXT");
+  // Bases creadas con versiones anteriores: completar columnas nuevas de productos.
+  const cols = columnNames("productos");
+  if (!cols.includes("codigo")) {
+    // SQLite no permite agregar una columna UNIQUE con ALTER TABLE: se agrega y se indexa aparte.
+    sqlite.exec("ALTER TABLE productos ADD COLUMN codigo TEXT");
+    sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_productos_codigo ON productos(codigo)");
   }
+  addColumnIfMissing("productos", "costo", "TEXT");
+  addColumnIfMissing("productos", "codigoProveedor", "TEXT");
+  addColumnIfMissing("productos", "unidad", "TEXT NOT NULL DEFAULT 'u'");
+  addColumnIfMissing("productos", "descuentoContado", "TEXT DEFAULT '0'");
+
+  migrarInsumosAProductos();
+  migrarVentasACabeceraYLineas();
+  if (!tableExists("ventas")) sqlite.exec(VENTAS_DDL);
+
+  // Los contadores nunca quedan por debajo del mayor número ya emitido.
+  sqlite.exec(`
+    INSERT OR IGNORE INTO contadores (nombre, valor) VALUES ('venta', 0), ('remito', 0), ('cotizacion', 0);
+    UPDATE contadores SET valor = MAX(valor, (SELECT COALESCE(MAX(numero), 0) FROM ventas)) WHERE nombre = 'venta';
+    UPDATE contadores SET valor = MAX(valor, (SELECT COALESCE(MAX(remitoNumero), 0) FROM ventas)) WHERE nombre = 'remito';
+    UPDATE contadores SET valor = MAX(valor, (SELECT COALESCE(MAX(numero), 0) FROM cotizaciones)) WHERE nombre = 'cotizacion';
+  `);
 }
 
 initializeTables();
+
+/** Siguiente número de una numeración correlativa ('venta', 'remito' o 'cotizacion'). Usar dentro de una transacción. */
+export function siguienteNumero(nombre: "venta" | "remito" | "cotizacion"): number {
+  sqlite.prepare("UPDATE contadores SET valor = valor + 1 WHERE nombre = ?").run(nombre);
+  return (sqlite.prepare("SELECT valor FROM contadores WHERE nombre = ?").get(nombre) as { valor: number }).valor;
+}
 
 // ==================== USERS ====================
 export async function upsertUser(user: InsertUser): Promise<void> {
@@ -153,46 +322,10 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// ==================== INSUMOS ====================
-export async function createInsumo(data: InsertInsumo) {
-  return db.insert(insumos).values(data);
-}
-
-export async function getInsumos() {
-  return db.select().from(insumos).orderBy(insumos.id);
-}
-
-export async function getInsumoById(id: number) {
-  const result = await db.select().from(insumos).where(eq(insumos.id, id)).limit(1);
-  return result[0];
-}
-
-export async function updateInsumo(id: number, data: Partial<InsertInsumo>) {
-  return db.update(insumos).set(data).where(eq(insumos.id, id));
-}
-
-export async function deleteInsumo(id: number) {
-  return db.delete(insumos).where(eq(insumos.id, id));
-}
-
-export async function decrementInsumoStock(id: number, cantidad: number) {
-  const insumo = await getInsumoById(id);
-  if (!insumo) throw new Error("Insumo not found");
-  const newCantidad = parseFloat(insumo.cantidad?.toString() || "0") - cantidad;
-  if (newCantidad < -0.001) throw new Error(`Stock insuficiente para: ${insumo.descripcion}`);
-  return db.update(insumos).set({ cantidad: Math.max(0, newCantidad).toString() }).where(eq(insumos.id, id));
-}
-
-export async function incrementInsumoStock(id: number, cantidad: number) {
-  const insumo = await getInsumoById(id);
-  if (!insumo) throw new Error("Insumo not found");
-  const newCantidad = parseFloat(insumo.cantidad?.toString() || "0") + cantidad;
-  return db.update(insumos).set({ cantidad: newCantidad.toString() }).where(eq(insumos.id, id));
-}
-
 // ==================== PRODUCTOS ====================
 export async function createProducto(data: InsertProducto) {
-  return db.insert(productos).values(data);
+  const r = db.insert(productos).values(data).run();
+  return { id: Number(r.lastInsertRowid) };
 }
 
 export async function getProductos() {
@@ -205,19 +338,11 @@ export async function getProductoById(id: number) {
 }
 
 export async function updateProducto(id: number, data: Partial<InsertProducto>) {
-  return db.update(productos).set(data).where(eq(productos.id, id));
+  return db.update(productos).set({ ...data, updatedAt: new Date().toISOString() }).where(eq(productos.id, id));
 }
 
 export async function deleteProducto(id: number) {
   return db.delete(productos).where(eq(productos.id, id));
-}
-
-export async function updateProductoStock(id: number, cantidad: number) {
-  const producto = await getProductoById(id);
-  if (!producto) throw new Error("Producto not found");
-  const newStock = parseFloat(producto.stock?.toString() || "0") + cantidad;
-  if (newStock < -0.001) throw new Error(`Stock insuficiente para: ${producto.nombre}`);
-  return db.update(productos).set({ stock: Math.max(0, newStock).toString() }).where(eq(productos.id, id));
 }
 
 // ==================== RECETAS ====================
@@ -233,64 +358,68 @@ export async function getRecetasByProducto(productoId: number) {
   return db.select().from(recetas).where(eq(recetas.productoId, productoId));
 }
 
+export async function getRecetaById(id: number) {
+  const result = await db.select().from(recetas).where(eq(recetas.id, id)).limit(1);
+  return result[0];
+}
+
 export async function updateReceta(id: number, data: Partial<InsertReceta>) {
-  return db.update(recetas).set(data).where(eq(recetas.id, id));
+  return db.update(recetas).set({ ...data, updatedAt: new Date().toISOString() }).where(eq(recetas.id, id));
 }
 
 export async function deleteReceta(id: number) {
   return db.delete(recetas).where(eq(recetas.id, id));
 }
 
-// ==================== PRODUCCION ====================
-export async function createProduccion(data: InsertProduccion) {
-  return db.insert(produccion).values(data);
+/** Recetas de otros productos que usan a este producto como componente. */
+export function getRecetasQueUsan(productoId: number) {
+  return db.select().from(recetas).where(eq(recetas.insumoId, productoId)).all();
 }
 
+// ==================== PRODUCCION ====================
 export async function getProduccion() {
   return db.select().from(produccion).orderBy(produccion.fecha);
 }
 
-export async function getProduccionById(id: number) {
-  const result = await db.select().from(produccion).where(eq(produccion.id, id)).limit(1);
-  return result[0];
+// ==================== CLIENTES ====================
+export function createCliente(data: InsertCliente) {
+  const r = db.insert(clientes).values(data).run();
+  return Number(r.lastInsertRowid);
 }
 
-export async function deleteProduccion(id: number) {
-  return db.delete(produccion).where(eq(produccion.id, id));
-}
-
-// ==================== VENTAS ====================
-export async function createVenta(data: InsertVenta) {
-  return db.insert(ventas).values(data);
-}
-
-export async function getVentas() {
-  return db.select().from(ventas).orderBy(ventas.fecha);
-}
-
-export async function getVentaById(id: number) {
-  const result = await db.select().from(ventas).where(eq(ventas.id, id)).limit(1);
-  return result[0];
-}
-
-export async function deleteVenta(id: number) {
-  return db.delete(ventas).where(eq(ventas.id, id));
+/** Clientes con su saldo de cuenta corriente (cargos - pagos). */
+export async function getClientes() {
+  const saldos = sqlite.prepare(`
+    SELECT clienteId,
+           SUM(CASE WHEN tipo = 'cargo' THEN CAST(monto AS REAL) ELSE -CAST(monto AS REAL) END) AS saldo
+    FROM movimientos_cuenta GROUP BY clienteId
+  `).all() as { clienteId: number; saldo: number }[];
+  const saldoDe = new Map(saldos.map(s => [s.clienteId, Math.round(s.saldo * 100) / 100]));
+  const lista = await db.select().from(clientes).orderBy(clientes.nombre);
+  return lista.map(c => ({ ...c, saldo: saldoDe.get(c.id) ?? 0 }));
 }
 
 // ==================== DASHBOARD ====================
 export async function getDashboardStats() {
   const ventasData = await db.select().from(ventas);
+  const items = await db.select().from(ventaItems);
   const productosData = await db.select().from(productos);
 
   const totalVentas = ventasData.reduce((sum, v) => sum + parseFloat(v.total?.toString() || "0"), 0);
-  const totalUnidades = ventasData.reduce((sum, v) => sum + parseFloat(v.cantidad?.toString() || "0"), 0);
+  const totalUnidades = items.reduce((sum, i) => sum + parseFloat(i.cantidad?.toString() || "0"), 0);
+
+  // El descuento general de cada venta se reparte proporcionalmente entre sus líneas.
+  const factorVenta = new Map(ventasData.map(v => {
+    const sub = parseFloat(v.subtotal?.toString() || "0");
+    return [v.id, sub > 0 ? parseFloat(v.total?.toString() || "0") / sub : 1];
+  }));
 
   const porProducto: Record<string, { cantidad: number; total: number }> = {};
-  ventasData.forEach(v => {
-    const key = v.productoId?.toString() || "unknown";
+  items.forEach(i => {
+    const key = i.productoId?.toString() || "unknown";
     if (!porProducto[key]) porProducto[key] = { cantidad: 0, total: 0 };
-    porProducto[key].cantidad += parseFloat(v.cantidad?.toString() || "0");
-    porProducto[key].total += parseFloat(v.total?.toString() || "0");
+    porProducto[key].cantidad += parseFloat(i.cantidad?.toString() || "0");
+    porProducto[key].total += parseFloat(i.subtotal?.toString() || "0") * (factorVenta.get(i.ventaId) ?? 1);
   });
 
   const getNombre = (id: number) => productosData.find(p => p.id === id)?.nombre || `Producto ${id}`;
@@ -306,11 +435,6 @@ export async function getDashboardStats() {
 }
 
 export async function getStockBajo(limite: number = 10) {
-  const { lte } = await import("drizzle-orm");
-  return db.select().from(productos).where(lte(productos.stock, String(limite)));
-}
-
-export async function getInsumosBajo(limite: number = 10) {
-  const { lte } = await import("drizzle-orm");
-  return db.select().from(insumos).where(lte(insumos.cantidad, String(limite)));
+  // El stock se guarda como texto: se compara como número, no alfabéticamente.
+  return db.select().from(productos).where(sql`CAST(${productos.stock} AS REAL) <= ${limite}`).orderBy(productos.nombre);
 }

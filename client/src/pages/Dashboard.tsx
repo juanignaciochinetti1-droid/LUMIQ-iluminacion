@@ -10,7 +10,6 @@ const COLORS = ['#ff8c42', '#ff7a3d', '#ff6b35', '#ff5c2e', '#ff4d27'];
 export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = trpc.dashboard.stats.useQuery();
   const { data: stockBajo } = trpc.dashboard.stockBajo.useQuery();
-  const { data: insumosBajo } = trpc.dashboard.insumosBajo.useQuery();
   const { data: ventas } = trpc.ventas.list.useQuery();
   const { data: productos } = trpc.productos.list.useQuery();
 
@@ -19,22 +18,28 @@ export default function Dashboard() {
   useEffect(() => {
     if (ventas && productos) {
       const porProducto: Record<string, { nombre: string; cantidad: number; total: number }> = {};
-      
-      ventas.forEach((v: any) => {
-        const producto = productos.find((p: any) => p.id === v.productoId);
-        const nombre = producto?.nombre || `Producto ${v.productoId}`;
-        
-        if (!porProducto[v.productoId]) {
-          porProducto[v.productoId] = { nombre, cantidad: 0, total: 0 };
-        }
-        porProducto[v.productoId].cantidad += parseFloat(v.cantidad?.toString() || '0');
-        porProducto[v.productoId].total += parseFloat(v.total?.toString() || '0');
+
+      ventas.forEach((v) => {
+        // El descuento general de la venta se reparte proporcionalmente entre sus líneas.
+        const sub = parseFloat(v.subtotal?.toString() || '0');
+        const factor = sub > 0 ? parseFloat(v.total?.toString() || '0') / sub : 1;
+
+        v.items.forEach((it) => {
+          const producto = productos.find((p) => p.id === it.productoId);
+          const nombre = producto?.nombre || `Producto ${it.productoId}`;
+
+          if (!porProducto[it.productoId]) {
+            porProducto[it.productoId] = { nombre, cantidad: 0, total: 0 };
+          }
+          porProducto[it.productoId].cantidad += parseFloat(it.cantidad?.toString() || '0');
+          porProducto[it.productoId].total += parseFloat(it.subtotal?.toString() || '0') * factor;
+        });
       });
 
       const datos = Object.entries(porProducto)
         .map(([_, data]) => data)
         .sort((a, b) => b.total - a.total);
-      
+
       setVentasPorProducto(datos);
     }
   }, [ventas, productos]);
@@ -44,22 +49,13 @@ export default function Dashboard() {
   const maVendido = stats?.maVendido;
   const menosVendido = stats?.menosVendido;
 
-  const alertas = [
-    ...(stockBajo?.map((p: any) => ({
-      tipo: 'Stock Bajo',
-      item: p.nombre,
-      cantidad: p.stock,
-      unidad: 'unidades',
-      color: 'bg-orange-100 text-orange-800',
-    })) || []),
-    ...(insumosBajo?.map((i: any) => ({
-      tipo: 'Insumo Bajo',
-      item: i.descripcion,
-      cantidad: i.cantidad,
-      unidad: i.unidad,
-      color: 'bg-red-100 text-red-800',
-    })) || []),
-  ];
+  const alertas = stockBajo?.map((p) => ({
+    tipo: 'Stock Bajo',
+    item: p.nombre,
+    cantidad: p.stock,
+    unidad: p.unidad,
+    color: 'bg-orange-100 text-orange-800',
+  })) || [];
 
   return (
     <div className="space-y-6">
